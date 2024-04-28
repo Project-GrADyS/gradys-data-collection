@@ -10,8 +10,7 @@ from gymnasium.spaces import Box, Discrete
 from numpy.typing import ArrayLike
 from pettingzoo.utils import wrappers, parallel_to_aec
 
-from agent import RLAgentProtocol
-from environment import GrADySEnvironment
+from base import RLAgentProtocol, GrADySEnvironment
 
 
 class PingProtocol(RLAgentProtocol):
@@ -133,7 +132,7 @@ def test_environment():
         env_instance.step(action)
 
     raw_environment: GrADySEnvironment = env_instance.env.env.env.env
-    for agent in raw_environment.simulator_agents:
+    for agent in raw_environment.rl_agents:
         assert len(agent.protocol_encapsulator.protocol.received) == 90
         assert len(agent.protocol_encapsulator.protocol.sent) == 10
     env_instance.close()

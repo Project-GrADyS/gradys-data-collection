@@ -1,27 +1,40 @@
 import copy
-from abc import abstractmethod, ABC
-from typing import Optional, Literal, Dict, List, override, final
+from abc import ABC, abstractmethod
+from time import sleep
+from typing import List, Optional, Literal, Dict, final
 
 import gymnasium
+from gradysim.protocol.interface import IProtocol
 from gradysim.simulator.event import EventLoop
 from gradysim.simulator.handler.communication import CommunicationHandler
 from gradysim.simulator.handler.interface import INodeHandler
 from gradysim.simulator.handler.mobility import MobilityHandler
 from gradysim.simulator.handler.timer import TimerHandler
-from gradysim.simulator.handler.visualization import VisualizationHandler
+from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration
 from gradysim.simulator.node import Node
-from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
+from gradysim.simulator.simulation import Simulator, SimulationConfiguration, SimulationBuilder
 from gymnasium.spaces import Discrete
-from numpy.typing import ArrayLike
+from numpy._typing import ArrayLike
 from pettingzoo import ParallelEnv
-from pettingzoo.utils import wrappers, parallel_to_aec
 
-from agent import RLAgentProtocol
+
+class RLAgentProtocol(IProtocol, ABC):
+    @abstractmethod
+    def act(self, action: ArrayLike) -> None:
+        """
+        Implement this method to handle the action dictated by the RL agent
+        :param action: The action this agent should take
+        """
+        pass
 
 
 class GrADySEnvironment(ParallelEnv, ABC):
     simulator: Simulator
-    simulator_agents: List[Node[RLAgentProtocol]]
+    rl_agents: Dict[str, Node[RLAgentProtocol]]
+    nodes: List[Node]
+
+    episode_returns: Dict[str, float]
+    episode_length: int
 
     # Indicates if an algorithm iteration has finished in the simulation
     algorithm_iteration_finished: bool
@@ -74,10 +87,10 @@ class GrADySEnvironment(ParallelEnv, ABC):
         Collects additional information for each agent in the simulation.
         :return: A dictionary of dictionaries of information for each agent in the format { "agent_id": { "info_key": info } }
         """
-        return {agent: {} for agent in self.agents}
+        return {agent: {"teste": 1} for agent in self.agents}
 
     @abstractmethod
-    def compute_agent_rewards(self, previous: Simulator, next: Simulator, actions) -> Dict[str, float]:
+    def compute_agent_rewards(self, previous: Dict[str, ArrayLike], next: Dict[str, ArrayLike], actions) -> Dict[str, float]:
         """
         Computes the rewards for each agent based on the previous and next states of the simulation
         :param previous: The previous state of the simulation
@@ -95,7 +108,6 @@ class GrADySEnvironment(ParallelEnv, ABC):
     def action_space(self, agent):
         return Discrete(3)
 
-    @override
     @final
     def render(self):
         """
@@ -110,7 +122,6 @@ class GrADySEnvironment(ParallelEnv, ABC):
 
         # Visualization is handled by the simulator
 
-    @override
     @final
     def close(self):
         """
@@ -120,7 +131,6 @@ class GrADySEnvironment(ParallelEnv, ABC):
         """
         pass
 
-    @override
     @final
     def reset(self, seed=None, options=None):
         """
@@ -130,7 +140,11 @@ class GrADySEnvironment(ParallelEnv, ABC):
         hands that are played.
         Returns the observations for each agent
         """
+        self.episode_returns = {agent: 0 for agent in self.possible_agents}
+        self.episode_length = 0
+
         self.agents = self.possible_agents.copy()
+        self.nodes = []
 
         builder = SimulationBuilder(self.get_simulation_configuration())
         builder.add_handler(CommunicationHandler())
@@ -138,8 +152,9 @@ class GrADySEnvironment(ParallelEnv, ABC):
         builder.add_handler(TimerHandler())
 
         if self.render_mode == "visual":
-            builder.add_handler(VisualizationHandler())
+            builder.add_handler(VisualizationHandler(VisualizationConfiguration(open_browser=True)))
 
+        agents = iter(self.agents)
         # Special handler to give us access to al RL agents. Also
         class GrADySHandler(INodeHandler):
             event_loop: EventLoop
@@ -155,7 +170,8 @@ class GrADySEnvironment(ParallelEnv, ABC):
 
             def register_node(handler_self, node: Node) -> None:
                 if isinstance(node.protocol_encapsulator.protocol, RLAgentProtocol):
-                    self.simulator_agents.append(node)
+                    self.rl_agents[next(agents)] = node
+                self.nodes.append(node)
 
             def iterate_algorithm(handler_self):
                 self.algorithm_iteration_finished = True
@@ -167,7 +183,7 @@ class GrADySEnvironment(ParallelEnv, ABC):
 
         builder.add_handler(GrADySHandler())
 
-        self.simulator_agents = []
+        self.rl_agents = {}
         self.create_simulation_scenario(builder)
 
         self.simulator = builder.build()
@@ -178,7 +194,6 @@ class GrADySEnvironment(ParallelEnv, ABC):
 
         return self.observe_simulation(self.simulator), self.collect_simulation_info(self.simulator)
 
-    @override
     @final
     def step(self, actions):
         """
@@ -190,32 +205,40 @@ class GrADySEnvironment(ParallelEnv, ABC):
         - infos
         dicts where each dict looks like {agent_1: item_1, agent_2: item_2}
         """
+        self.episode_length += 1
+
         # If a user passes in actions with no agents, then just return empty observations, etc.
         if not actions:
             self.agents = []
             return {}, {}, {}, {}, {}
 
         # Saving current state
-        simulator_before = copy.deepcopy(self.simulator)
+        state_before = self.observe_simulation(self.simulator)
 
         # Acting
         for agent, action in actions.items():
-            agent_index = self.agent_name_mapping[agent]
-            agent_node = self.simulator_agents[agent_index]
+            agent_node = self.rl_agents[agent]
             agent_node.protocol_encapsulator.protocol.act(action)
 
         # Simulating for a single iteration
         self.algorithm_iteration_finished = False
         simulation_ongoing = True
         while not self.algorithm_iteration_finished:
+            if self.render_mode == "visual":
+                current_time = self.simulator._current_timestamp
+                next_time = self.simulator._event_loop.peek_event().timestamp
+                sleep(max(0, next_time - current_time))
+
             simulation_ongoing = self.simulator.step_simulation()
             if not simulation_ongoing:
                 break
 
         # Collecting next state
-        simulator_after = self.simulator
+        state_after = self.observe_simulation(self.simulator)
 
-        rewards = self.compute_agent_rewards(simulator_before, simulator_after, actions)
+        rewards = self.compute_agent_rewards(state_before, state_after, actions)
+        for agent, reward in rewards.items():
+            self.episode_returns[agent] += reward
 
         terminations = {agent: False for agent in self.agents}
 
