@@ -40,6 +40,8 @@ class Args:
     """whether to save model checkpoints"""
     checkpoint_freq: int = 10000
     """the frequency of checkpoints"""
+    checkpoint_visual_evaluation: bool = True
+    """whether to visually evaluate the model at each checkpoint"""
     upload_model: bool = False
     """whether to upload the saved model to huggingface"""
     hf_entity: str = ""
@@ -298,22 +300,23 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 torch.save((actor.state_dict(), qf1.state_dict()), model_path)
                 print(f"model saved to {model_path}")
 
-                print("Visually evaluating the model")
-                temp_env = make_env("visual")
-                obs, _ = temp_env.reset(seed=args.seed)
-                for _ in range(100):
-                    with torch.no_grad():
-                        actions = {}
-                        for agent in temp_env.agents:
-                            actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
-                            actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
-                            actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
+                if args.checkpoint_visual_evaluation:
+                    print("Visually evaluating the model")
+                    temp_env = make_env("visual")
+                    obs, _ = temp_env.reset(seed=args.seed)
+                    for _ in range(100):
+                        with torch.no_grad():
+                            actions = {}
+                            for agent in temp_env.agents:
+                                actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
+                                actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
+                                actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
 
-                    next_obs, rewards, terminations, truncations, infos = temp_env.step(actions)
-                    obs = next_obs
-                    if len(infos) > 0 and "avg_reward" in infos[temp_env.agents[0]]:
-                        break
-                temp_env.close()
+                        next_obs, rewards, terminations, truncations, infos = temp_env.step(actions)
+                        obs = next_obs
+                        if len(infos) > 0 and "avg_reward" in infos[temp_env.agents[0]]:
+                            break
+                    temp_env.close()
                 print("Checkpoint evaluation done")
 
     env.close()
