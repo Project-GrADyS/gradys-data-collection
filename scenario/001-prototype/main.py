@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 import gymnasium as gym
 import numpy as np
-import supersuit as ss
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -127,7 +126,10 @@ class Actor(nn.Module):
         return x * self.action_scale + self.action_bias
 
 
-if __name__ == "__main__":
+args = tyro.cli(Args)
+
+
+def main():
     import stable_baselines3 as sb3
 
     if sb3.__version__ < "2.0":
@@ -136,7 +138,6 @@ if __name__ == "__main__":
 poetry run pip install "stable_baselines3==2.0.0a1"
 """
         )
-    args = tyro.cli(Args)
     run_name = f"GrADyS__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
@@ -198,6 +199,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     obs, _ = env.reset(seed=args.seed)
     terminated = False
     for global_step in range(args.total_timesteps):
+        step_start = time.time()
+
         if terminated:
             obs, _ = env.reset(seed=args.seed)
             terminated = False
@@ -210,10 +213,16 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         else:
             with torch.no_grad():
                 actions = {}
-                for agent in env.agents:
-                    actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
-                    actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
-                    actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
+                all_obs = torch.tensor(np.array([obs[agent] for agent in env.agents]),
+                                       device=device,
+                                       dtype=torch.float32)
+                all_actions: torch.Tensor = actor(all_obs)
+                all_actions.add_(torch.normal(torch.zeros_like(all_actions, device=device),
+                                              actor.action_scale * args.exploration_noise))
+                all_actions.clip_(torch.tensor(action_space.low, device=device),
+                                  torch.tensor(action_space.high, device=device))
+                for index, agent in enumerate(env.agents):
+                    actions[agent] = all_actions[index].cpu().numpy()
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
@@ -283,16 +292,17 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
                 # update the target network
                 for param, target_param in zip(actor.parameters(), target_actor.parameters()):
-                    target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
+                    target_param.data.lerp_(param.data, args.tau)
                 for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                    target_param.data.copy_(args.tau * param.data + (1 - args.tau) * target_param.data)
+                    target_param.data.lerp_(param.data, args.tau)
 
             if global_step % 100 == 0:
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
-                print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
                 writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+                writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
+                print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
 
             if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
                 print("Reached checkpoint at step", global_step)
@@ -321,3 +331,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     env.close()
     writer.close()
+
+
+if __name__ == "__main__":
+    main()

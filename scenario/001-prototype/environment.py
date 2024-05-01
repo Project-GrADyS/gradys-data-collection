@@ -11,7 +11,7 @@ from gradysim.protocol.messages.telemetry import Telemetry
 from gradysim.simulator.event import EventLoop
 from gradysim.simulator.handler.communication import CommunicationHandler, CommunicationMedium
 from gradysim.simulator.handler.interface import INodeHandler
-from gradysim.simulator.handler.mobility import MobilityHandler
+from gradysim.simulator.handler.mobility import MobilityHandler, MobilityConfiguration
 from gradysim.simulator.handler.timer import TimerHandler
 from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration
 from gradysim.simulator.node import Node
@@ -205,12 +205,16 @@ class GrADySEnvironment(ParallelEnv):
         self.agents = self.possible_agents.copy()
 
         builder = SimulationBuilder(SimulationConfiguration(
-            duration=self.max_episode_length
+            duration=self.max_episode_length,
+            debug=False,
+            execution_logging=False
         ))
         builder.add_handler(CommunicationHandler(CommunicationMedium(
             transmission_range=self.communication_range
         )))
-        builder.add_handler(MobilityHandler())
+        builder.add_handler(MobilityHandler(MobilityConfiguration(
+            update_rate=self.algorithm_iteration_interval / 3
+        )))
         builder.add_handler(TimerHandler())
 
         if self.render_mode == "visual":
@@ -324,18 +328,6 @@ class GrADySEnvironment(ParallelEnv):
             if not simulation_ongoing:
                 break
 
-        # # Check if any drones are out of bounds, if so, terminate the simulation
-        # if simulation_ongoing:
-        #     all_drone_positions = [
-        #         self.simulator.get_node(agent_id).position
-        #         for agent_id in self.agent_node_ids
-        #     ]
-        #     any_drones_out_of_bounds = any(
-        #         abs(position[0]) > self.scenario_size or abs(position[1]) > self.scenario_size
-        #         for position in all_drone_positions
-        #     )
-        #     simulation_ongoing = not any_drones_out_of_bounds
-
         sensors_collected = sum(
             self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
             for sensor_id in self.sensor_node_ids
@@ -355,12 +347,6 @@ class GrADySEnvironment(ParallelEnv):
                 simulation_ongoing = False
                 rewards[self.agents[index]] = -1
                 break
-
-        # Big reward for collecting all sensors
-        # if all_sensors_collected:
-        #     rewards = {
-        #         agent: 10 for agent in self.agents
-        #     }
 
         self.reward_sum += rewards[self.agents[0]]
 
