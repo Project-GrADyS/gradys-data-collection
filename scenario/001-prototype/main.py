@@ -19,6 +19,8 @@ from environment import GrADySEnvironment
 
 @dataclass
 class Args:
+    run_name: str = "GrADyS"
+    """the name of the run"""
     exp_name: str = os.path.basename(__file__)[: -len(".py")]
     """the name of this experiment"""
     seed: int = 1
@@ -169,7 +171,7 @@ def main():
 poetry run pip install "stable_baselines3==2.0.0a1"
 """
         )
-    run_name = f"GrADyS__{args.exp_name}__{args.seed}__{int(time.time())}"
+    run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
     if args.track:
         import wandb
 
