@@ -149,20 +149,15 @@ class EarlyStopping:
 
     def __call__(self, score, step):
         if score < args.early_stopping_minimum or step < args.early_stopping_beginning:
-            print(f"BEFORE BEGGINING OR MINIMUM - {score}< {args.early_stopping_minimum} or {step} < {args.early_stopping_beginning}")
             return False
 
         if self.best_score is None:
-            print("FIRST SCORE")
             self.best_score = score
         elif score < self.best_score * (1 + args.early_stopping_tolerance):
-            print(f"EARLY STOPPING {self.counter}")
             self.counter += 1
             if self.counter >= args.early_stopping_patience:
-                print("EARLY STOPPING")
                 return True
         else:
-            print("RESET COUNTER")
             self.best_score = score
             self.counter = 0
 
