@@ -68,6 +68,13 @@ class Args:
     noise_clip: float = 0.5
     """noise clip parameter of the Target Policy Smoothing Regularization"""
 
+    early_stopping: bool = False
+    """if toggled, early stopping will be enabled based on the success rate"""
+    early_stopping_patience: int = 1000
+    """the patience of early stopping"""
+    early_stopping_minimum: float = 0.0
+    """the minimum success rate to consider early stopping"""
+
     algorithm_iteration_interval: float = 0.5
     max_episode_length: float = 30
     num_drones: int = 1
@@ -127,6 +134,30 @@ class Actor(nn.Module):
 
 
 args = tyro.cli(Args)
+
+
+class EarlyStopping:
+    def __init__(self):
+        self.patience = args.early_stopping_patience
+        self.minimum = args.early_stopping_minimum
+        self.counter = 0
+        self.best_score = None
+
+    def __call__(self, score):
+        if score < self.minimum:
+            return True
+
+        if self.best_score is None:
+            self.best_score = score
+        elif score < self.best_score:
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        else:
+            self.best_score = score
+            self.counter = 0
+
+        return False
 
 
 def main():
@@ -195,6 +226,34 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     )
     start_time = time.time()
 
+    early_stopping = EarlyStopping()
+
+    def save_checkpoint():
+        print("Reached checkpoint at step", global_step)
+        model_path = f"runs/{run_name}/{args.exp_name}-checkpoint{global_step // 10_000}.cleanrl_model"
+        torch.save((actor.state_dict(), qf1.state_dict()), model_path)
+        print(f"model saved to {model_path}")
+
+        if args.checkpoint_visual_evaluation:
+            print("Visually evaluating the model")
+            temp_env = make_env("visual")
+            obs, _ = temp_env.reset(seed=args.seed)
+            for _ in range(100):
+                with torch.no_grad():
+                    actions = {}
+                    for agent in temp_env.agents:
+                        actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
+                        actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
+                        actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
+
+                next_obs, rewards, terminations, truncations, infos = temp_env.step(actions)
+                obs = next_obs
+                if len(infos) > 0 and "avg_reward" in infos[temp_env.agents[0]]:
+                    break
+            temp_env.close()
+        print("Checkpoint evaluation done")
+
+
     # TRY NOT TO MODIFY: start the game
     obs, _ = env.reset(seed=args.seed)
     terminated = False
@@ -253,6 +312,13 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 global_step,
             )
 
+            if args.early_stopping:
+                if early_stopping(number_of_successes / episode_count):
+                    print("Early stopping after", episode_count, "episodes")
+                    if args.checkpoints:
+                        save_checkpoint()
+                    break
+
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         real_next_obs = next_obs.copy()
 
@@ -305,29 +371,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
 
             if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
-                print("Reached checkpoint at step", global_step)
-                model_path = f"runs/{run_name}/{args.exp_name}-checkpoint{global_step // 10_000}.cleanrl_model"
-                torch.save((actor.state_dict(), qf1.state_dict()), model_path)
-                print(f"model saved to {model_path}")
-
-                if args.checkpoint_visual_evaluation:
-                    print("Visually evaluating the model")
-                    temp_env = make_env("visual")
-                    obs, _ = temp_env.reset(seed=args.seed)
-                    for _ in range(100):
-                        with torch.no_grad():
-                            actions = {}
-                            for agent in temp_env.agents:
-                                actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
-                                actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
-                                actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
-
-                        next_obs, rewards, terminations, truncations, infos = temp_env.step(actions)
-                        obs = next_obs
-                        if len(infos) > 0 and "avg_reward" in infos[temp_env.agents[0]]:
-                            break
-                    temp_env.close()
-                print("Checkpoint evaluation done")
+                save_checkpoint()
 
     env.close()
     writer.close()
