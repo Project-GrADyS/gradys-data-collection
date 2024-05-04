@@ -70,12 +70,16 @@ class Args:
     noise_clip: float = 0.5
     """noise clip parameter of the Target Policy Smoothing Regularization"""
 
-    early_stopping: bool = False
+    early_stopping: bool = True
     """if toggled, early stopping will be enabled based on the success rate"""
-    early_stopping_patience: int = 1000
+    early_stopping_beginning: int = 1000
+    """the beginning of early stopping"""
+    early_stopping_patience: int = 100_000
     """the patience of early stopping"""
-    early_stopping_minimum: float = 0.0
+    early_stopping_minimum: float = 0.7
     """the minimum success rate to consider early stopping"""
+    early_stopping_tolerance: float = 0.1
+    """the tolerance of early stopping"""
 
     algorithm_iteration_interval: float = 0.5
     max_episode_length: float = 30
@@ -140,22 +144,25 @@ args = tyro.cli(Args)
 
 class EarlyStopping:
     def __init__(self):
-        self.patience = args.early_stopping_patience
-        self.minimum = args.early_stopping_minimum
         self.counter = 0
         self.best_score = None
 
-    def __call__(self, score):
-        if score < self.minimum:
-            return True
+    def __call__(self, score, step):
+        if score < args.early_stopping_minimum or step < args.early_stopping_beginning:
+            print(f"BEFORE BEGGINING OR MINIMUM - {score}< {args.early_stopping_minimum} or {step} < {args.early_stopping_beginning}")
+            return False
 
         if self.best_score is None:
+            print("FIRST SCORE")
             self.best_score = score
-        elif score < self.best_score:
+        elif score < self.best_score * (1 + args.early_stopping_tolerance):
+            print(f"EARLY STOPPING {self.counter}")
             self.counter += 1
-            if self.counter >= self.patience:
+            if self.counter >= args.early_stopping_patience:
+                print("EARLY STOPPING")
                 return True
         else:
+            print("RESET COUNTER")
             self.best_score = score
             self.counter = 0
 
@@ -315,10 +322,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             )
 
             if args.early_stopping:
-                if early_stopping(number_of_successes / episode_count):
+                if early_stopping(number_of_successes / episode_count, global_step):
                     print("Early stopping after", episode_count, "episodes")
-                    if args.checkpoints:
-                        save_checkpoint()
                     break
 
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
@@ -375,6 +380,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
                 save_checkpoint()
 
+    save_checkpoint()
     env.close()
     writer.close()
 
