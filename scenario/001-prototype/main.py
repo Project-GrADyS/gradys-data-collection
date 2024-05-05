@@ -146,9 +146,17 @@ class EarlyStopping:
     def __init__(self):
         self.counter = 0
         self.best_score = None
+        self.blocked = True
 
     def __call__(self, score, step):
-        if score < args.early_stopping_minimum or step < args.early_stopping_beginning:
+        if step % 100 == 0:
+            writer.add_scalar("charts/early_stopping_counter", self.counter, step)
+            writer.add_scalar("charts/early_stopping_best_score", self.best_score or 0, step)
+
+        if score >= args.early_stopping_minimum and step >= args.early_stopping_beginning:
+            self.blocked = False
+
+        if self.blocked:
             return False
 
         if self.best_score is None:
@@ -163,6 +171,8 @@ class EarlyStopping:
 
         return False
 
+run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
+writer = SummaryWriter(f"runs/{run_name}")
 
 def main():
     import stable_baselines3 as sb3
@@ -173,7 +183,7 @@ def main():
 poetry run pip install "stable_baselines3==2.0.0a1"
 """
         )
-    run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
+
     if args.track:
         import wandb
 
@@ -186,7 +196,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             monitor_gym=True,
             save_code=True,
         )
-    writer = SummaryWriter(f"runs/{run_name}")
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
