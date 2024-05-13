@@ -107,8 +107,7 @@ class GrADySEnvironment(ParallelEnv):
                  scenario_size: float = 100,
                  max_episode_length: float = 10_000,
                  randomize_sensor_positions: bool = False,
-                 communication_range: float = 20,
-                 soft_reward: bool = False):
+                 communication_range: float = 20):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -131,7 +130,6 @@ class GrADySEnvironment(ParallelEnv):
         self.scenario_size = scenario_size
         self.communication_range = communication_range
         self.randomize_sensor_positions = randomize_sensor_positions
-        self.soft_reward = soft_reward
 
     def observation_space(self, agent):
         # Observe locations of all agents
@@ -337,10 +335,7 @@ class GrADySEnvironment(ParallelEnv):
         all_sensors_collected = sensors_collected == self.num_sensors
 
         # reward = sensors_collected / self.num_sensors
-        if self.soft_reward:
-            reward = sensors_collected / self.num_sensors if (all_sensors_collected or not simulation_ongoing) else 0
-        else:
-            reward = int(all_sensors_collected)
+        reward = int(all_sensors_collected)
         rewards = {
             agent: reward for agent in self.agents
         }

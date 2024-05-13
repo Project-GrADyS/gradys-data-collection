@@ -81,7 +81,6 @@ class Args:
     early_stopping_tolerance: float = 0.1
     """the tolerance of early stopping"""
 
-    soft_reward: bool = False
     algorithm_iteration_interval: float = 0.5
     max_episode_length: float = 30
     num_drones: int = 1
@@ -98,8 +97,7 @@ def make_env(render_mode=None):
         num_sensors=args.num_sensors,
         max_episode_length=args.max_episode_length,
         scenario_size=args.scenario_size,
-        randomize_sensor_positions=args.randomize_sensor_positions,
-        soft_reward=args.soft_reward
+        randomize_sensor_positions=args.randomize_sensor_positions
     )
 
 
