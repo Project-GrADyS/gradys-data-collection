@@ -72,9 +72,9 @@ class Args:
 
     early_stopping: bool = True
     """if toggled, early stopping will be enabled based on the success rate"""
-    early_stopping_beginning: int = 1000
+    early_stopping_beginning: int = 1_000
     """the beginning of early stopping"""
-    early_stopping_patience: int = 100_000
+    early_stopping_patience: int = 10_000
     """the patience of early stopping"""
     early_stopping_minimum: float = 0.7
     """the minimum success rate to consider early stopping"""
