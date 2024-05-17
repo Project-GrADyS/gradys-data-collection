@@ -9,25 +9,17 @@ import tyro
 class Args:
     concurrency: int = 3
 
-# Commands:
-# python main.py --scenario_size=50 --num-drones=1 --num-sensors=1 --exp_name=1-sensor-1-drone-50-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=50 --num-drones=1 --num-sensors=2 --exp_name=2-sensor-1-drone-50-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=50 --num-drones=2 --num-sensors=1 --exp_name=1-sensor-2-drone-50-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=50 --num-drones=2 --num-sensors=2 --exp_name=2-sensor-2-drone-50-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=100 --num-drones=1 --num-sensors=1 --exp_name=1-sensor-1-drone-100-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=100 --num-drones=1 --num-sensors=2 --exp_name=2-sensor-1-drone-100-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=100 --num-drones=2 --num-sensors=1 --exp_name=1-sensor-2-drone-100-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-# python main.py --scenario_size=100 --num-drones=2 --num-sensors=2 --exp_name=2-sensor-2-drone-100-size --max_episode_length=60 --no-checkpoint-visual-evaluation
-
 experiments = [
-    ["python", "main.py", "--scenario_size=50", "--num-drones=1", "--num-sensors=1", "--exp_name=1-sensor-1-drone-50-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=50", "--num-drones=1", "--num-sensors=2", "--exp_name=2-sensor-1-drone-50-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=50", "--num-drones=2", "--num-sensors=1", "--exp_name=1-sensor-2-drone-50-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=50", "--num-drones=2", "--num-sensors=2", "--exp_name=2-sensor-2-drone-50-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=1", "--exp_name=1-sensor-1-drone-100-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=2", "--exp_name=2-sensor-1-drone-100-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=2", "--num-sensors=1", "--exp_name=1-sensor-2-drone-100-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=2", "--num-sensors=2", "--exp_name=2-sensor-2-drone-100-size", "--max_episode_length=60", "--no-checkpoint-visual-evaluation"]
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=1", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=2", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=3", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=5", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=6", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=7", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=8", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=9", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=10", "--exp_name=3-sensor-hard", "--max_episode_length=200", "--no-checkpoint-visual-evaluation", "--run-name=SingleDrone", "--checkpoint-freq=1000000", "--total-timesteps=1000000"],
 ]
 
 def run_experiment(experiment):
