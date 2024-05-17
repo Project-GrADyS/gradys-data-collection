@@ -96,6 +96,7 @@ class GrADySEnvironment(ParallelEnv):
     reward_sum: float
     max_reward: float
     episode_duration: int
+    stall_duration: int
 
     sensors_collected: int
 
@@ -107,7 +108,7 @@ class GrADySEnvironment(ParallelEnv):
                  num_drones: int = 1,
                  num_sensors: int = 2,
                  scenario_size: float = 100,
-                 max_episode_length: float = 10_000,
+                 max_iterations_stalled: int = 30,
                  randomize_sensor_positions: bool = False,
                  communication_range: float = 20,
                  soft_reward: bool = False,
@@ -131,7 +132,7 @@ class GrADySEnvironment(ParallelEnv):
         self.num_sensors = num_sensors
         self.num_drones = num_drones
         self.possible_agents = [f"drone{i}" for i in range(num_drones)]
-        self.max_episode_length = max_episode_length
+        self.max_iterations_stalled = max_iterations_stalled
         self.scenario_size = scenario_size
         self.communication_range = communication_range
         self.randomize_sensor_positions = randomize_sensor_positions
@@ -234,7 +235,6 @@ class GrADySEnvironment(ParallelEnv):
         self.agents = self.possible_agents.copy()
 
         builder = SimulationBuilder(SimulationConfiguration(
-            duration=self.max_episode_length,
             debug=False,
             execution_logging=False
         ))
@@ -317,6 +317,7 @@ class GrADySEnvironment(ParallelEnv):
             raise ValueError("Simulation failed to start")
 
         self.episode_duration = 0
+        self.stall_duration = 0
         self.reward_sum = 0
         self.max_reward = -math.inf
         self.sensors_collected = 0
@@ -345,6 +346,11 @@ class GrADySEnvironment(ParallelEnv):
             agent_node = self.simulator.get_node(self.agent_node_ids[index])
             agent_node.protocol_encapsulator.protocol.act(action)
 
+        sensors_collected_before = sum(
+            self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
+            for sensor_id in self.sensor_node_ids
+        )
+
         # Simulating for a single iteration
         self.algorithm_iteration_finished = False
         simulation_ongoing = True
@@ -362,6 +368,15 @@ class GrADySEnvironment(ParallelEnv):
             self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
             for sensor_id in self.sensor_node_ids
         )
+
+        if sensors_collected > sensors_collected_before:
+            self.stall_duration = 0
+        else:
+            self.stall_duration += 1
+
+        if self.stall_duration > self.max_iterations_stalled:
+            simulation_ongoing = False
+
         all_sensors_collected = sensors_collected == self.num_sensors
 
         if self.soft_reward:

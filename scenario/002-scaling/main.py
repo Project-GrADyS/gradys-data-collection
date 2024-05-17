@@ -90,7 +90,7 @@ class Args:
 
     algorithm_iteration_interval: float = 0.5
 
-    max_episode_length: float = 30
+    max_iterations_stalled: int = 30
     num_drones: int = 1
     num_sensors: int = 2
     scenario_size: float = 100
@@ -103,7 +103,7 @@ def make_env(render_mode=None):
         render_mode=render_mode,
         num_drones=args.num_drones,
         num_sensors=args.num_sensors,
-        max_episode_length=args.max_episode_length,
+        max_iterations_stalled=args.max_iterations_stalled,
         scenario_size=args.scenario_size,
         randomize_sensor_positions=args.randomize_sensor_positions,
         soft_reward=args.soft_reward,
