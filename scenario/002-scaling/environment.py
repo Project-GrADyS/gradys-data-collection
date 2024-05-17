@@ -380,7 +380,7 @@ class GrADySEnvironment(ParallelEnv):
         all_sensors_collected = sensors_collected == self.num_sensors
 
         if self.soft_reward:
-            reward = sensors_collected / self.num_sensors if (all_sensors_collected or not simulation_ongoing) else 0
+            reward = sensors_collected - sensors_collected_before
         else:
             reward = int(all_sensors_collected)
         rewards = {
