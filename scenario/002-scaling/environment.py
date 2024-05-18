@@ -108,7 +108,7 @@ class GrADySEnvironment(ParallelEnv):
                  num_drones: int = 1,
                  num_sensors: int = 2,
                  scenario_size: float = 100,
-                 max_iterations_stalled: int = 30,
+                 max_seconds_stalled: int = 30,
                  randomize_sensor_positions: bool = False,
                  communication_range: float = 20,
                  soft_reward: bool = False,
@@ -132,7 +132,7 @@ class GrADySEnvironment(ParallelEnv):
         self.num_sensors = num_sensors
         self.num_drones = num_drones
         self.possible_agents = [f"drone{i}" for i in range(num_drones)]
-        self.max_iterations_stalled = max_iterations_stalled
+        self.max_seconds_stalled = max_seconds_stalled
         self.scenario_size = scenario_size
         self.communication_range = communication_range
         self.randomize_sensor_positions = randomize_sensor_positions
@@ -372,9 +372,9 @@ class GrADySEnvironment(ParallelEnv):
         if sensors_collected > sensors_collected_before:
             self.stall_duration = 0
         else:
-            self.stall_duration += 1
+            self.stall_duration += self.algorithm_iteration_interval
 
-        if self.stall_duration > self.max_iterations_stalled:
+        if self.stall_duration > self.max_seconds_stalled:
             simulation_ongoing = False
 
         all_sensors_collected = sensors_collected == self.num_sensors
