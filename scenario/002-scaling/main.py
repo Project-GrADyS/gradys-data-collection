@@ -378,32 +378,33 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
-            data = rb.sample(args.batch_size)
-            with torch.no_grad():
-                next_state_actions = target_actor(data.next_observations)
-                qf1_next_target = qf1_target(data.next_observations, next_state_actions)
-                next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * args.gamma * (
-                    qf1_next_target).view(-1)
+            for _ in env.agents:
+                data = rb.sample(args.batch_size)
+                with torch.no_grad():
+                    next_state_actions = target_actor(data.next_observations)
+                    qf1_next_target = qf1_target(data.next_observations, next_state_actions)
+                    next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * args.gamma * (
+                        qf1_next_target).view(-1)
 
-            qf1_a_values = qf1(data.observations, data.actions).view(-1)
-            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+                qf1_a_values = qf1(data.observations, data.actions).view(-1)
+                qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
-            # optimize the model
-            q_optimizer.zero_grad()
-            qf1_loss.backward()
-            q_optimizer.step()
+                # optimize the model
+                q_optimizer.zero_grad()
+                qf1_loss.backward()
+                q_optimizer.step()
 
-            if global_step % args.policy_frequency == 0:
-                actor_loss = -qf1(data.observations, actor(data.observations)).mean()
-                actor_optimizer.zero_grad()
-                actor_loss.backward()
-                actor_optimizer.step()
+                if global_step % args.policy_frequency == 0:
+                    actor_loss = -qf1(data.observations, actor(data.observations)).mean()
+                    actor_optimizer.zero_grad()
+                    actor_loss.backward()
+                    actor_optimizer.step()
 
-                # update the target network
-                for param, target_param in zip(actor.parameters(), target_actor.parameters()):
-                    target_param.data.lerp_(param.data, args.tau)
-                for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                    target_param.data.lerp_(param.data, args.tau)
+                    # update the target network
+                    for param, target_param in zip(actor.parameters(), target_actor.parameters()):
+                        target_param.data.lerp_(param.data, args.tau)
+                    for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
+                        target_param.data.lerp_(param.data, args.tau)
 
             if global_step % 100 == 0:
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
@@ -413,8 +414,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
                 print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
 
-            if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
-                save_checkpoint()
+        if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
+            save_checkpoint()
 
     save_checkpoint()
     env.close()
