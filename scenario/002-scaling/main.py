@@ -11,8 +11,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
-from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
+
+from torchrl.data import ReplayBuffer, LazyTensorStorage
+from tensordict import tensorclass
 
 from environment import GrADySEnvironment
 
@@ -185,6 +187,14 @@ class EarlyStopping:
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
 
+@tensorclass
+class ReplayData:
+    observations: torch.Tensor
+    next_observations: torch.Tensor
+    actions: torch.Tensor
+    dones: torch.Tensor
+    rewards: torch.Tensor
+
 def main():
     import stable_baselines3 as sb3
 
@@ -241,13 +251,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate)
 
-    rb = ReplayBuffer(
-        args.buffer_size,
-        observation_space,
-        action_space,
-        device,
-        handle_timeout_termination=False,
-    )
+    rb = ReplayBuffer(storage=LazyTensorStorage(args.buffer_size, device=device))
     start_time = time.time()
 
     early_stopping = EarlyStopping()
@@ -293,6 +297,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             actions = {
                 agent: action_space.sample() for agent in env.agents
             }
+            all_actions = torch.tensor(np.array(list(actions.values())), device=device, dtype=torch.float32)
         else:
             with torch.no_grad():
                 actions = {}
@@ -350,13 +355,23 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
         real_next_obs = next_obs.copy()
 
-        for agent in env.agents:
-            rb.add(obs[agent],
-                   real_next_obs[agent],
-                   actions[agent],
-                   np.array([rewards[agent]]),
-                   np.array([terminations[agent]]),
-                   [infos.get(agent, {})])
+        all_obs = torch.tensor(np.array([obs[agent] for agent in env.agents]),
+                                 device=device,
+                                 dtype=torch.float32)
+        all_next_obs = torch.tensor(np.array([real_next_obs[agent] for agent in env.agents]),
+                                     device=device,
+                                     dtype=torch.float32)
+
+
+        data = ReplayData(
+            observations=all_obs,
+            next_observations=all_next_obs,
+            actions=all_actions,
+            dones=torch.tensor(list(terminations.values()), device=device ,dtype=torch.int),
+            rewards=torch.tensor(list(rewards.values()), device=device, dtype=torch.float32),
+            batch_size=[args.num_drones]
+        )
+        rb.extend(data)
 
         # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
         obs = next_obs
