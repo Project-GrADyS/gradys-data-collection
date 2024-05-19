@@ -78,7 +78,7 @@ class Args:
     """the patience of early stopping"""
     early_stopping_minimum: float = 0.7
     """the minimum success rate to consider early stopping"""
-    early_stopping_tolerance: float = 0.1
+    early_stopping_tolerance: float = 0.02
     """the tolerance of early stopping"""
 
     soft_reward: bool = True
