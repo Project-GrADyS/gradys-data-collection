@@ -45,7 +45,7 @@ class SensorProtocol(IProtocol):
 class DroneProtocol(IProtocol):
     current_position: tuple[float, float, float]
 
-    def act(self, action) -> None:
+    def act(self, action, coordinate_limit: float) -> None:
         direction: float = action[0] * 2 * np.pi
 
         unit_vector = [np.cos(direction), np.sin(direction)]
@@ -56,6 +56,10 @@ class DroneProtocol(IProtocol):
             float(self.current_position[1] + unit_vector[1] * 1e5),
             float(self.current_position[2])
         ]
+
+        # Bound destination within scenario
+        destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
+        destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
 
         # Start travelling in the direction of travel
         command = GotoCoordsMobilityCommand(*destination)
@@ -113,7 +117,8 @@ class GrADySEnvironment(ParallelEnv):
                  communication_range: float = 20,
                  soft_reward: bool = False,
                  state_num_closest_sensors: int = 2,
-                 state_num_closest_drones: int = 2):
+                 state_num_closest_drones: int = 2,
+                 block_out_of_bounds: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -344,7 +349,9 @@ class GrADySEnvironment(ParallelEnv):
         # Acting
         for index, action in enumerate(actions.values()):
             agent_node = self.simulator.get_node(self.agent_node_ids[index])
-            agent_node.protocol_encapsulator.protocol.act(action)
+
+            coordinate_limit = self.scenario_size if self.block_out_of_bounds else float("inf")
+            agent_node.protocol_encapsulator.protocol.act(action, coordinate_limit)
 
         sensors_collected_before = sum(
             self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
@@ -388,11 +395,12 @@ class GrADySEnvironment(ParallelEnv):
         }
         self.sensors_collected = sensors_collected
 
-        for index in range(len(self.agents)):
-            agent_node = self.simulator.get_node(self.agent_node_ids[index])
-            if self.detect_out_of_bounds_agent(agent_node):
-                simulation_ongoing = False
-                rewards[self.agents[index]] = -1
+        if not self.block_out_of_bounds:
+            for index in range(len(self.agents)):
+                agent_node = self.simulator.get_node(self.agent_node_ids[index])
+                if self.detect_out_of_bounds_agent(agent_node):
+                    simulation_ongoing = False
+                    rewards[self.agents[index]] = -1
 
         self.reward_sum += rewards[self.agents[0]]
         self.max_reward = max(self.max_reward, *rewards.values())

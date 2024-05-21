@@ -87,6 +87,9 @@ class Args:
     """the number of closest sensors to consider in the state"""
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
+    block_out_of_bounds: bool = True
+    """if toggled, the agent will be blocked if it goes out of bounds. If off the agent will be punished instead"""
+
 
     algorithm_iteration_interval: float = 0.5
 
@@ -109,6 +112,7 @@ def make_env(render_mode=None):
         soft_reward=args.soft_reward,
         state_num_closest_sensors=args.state_num_closest_sensors,
         state_num_closest_drones=args.state_num_closest_drones,
+        block_out_of_bounds=args.block_out_of_bounds,
     )
 
 
