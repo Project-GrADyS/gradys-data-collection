@@ -112,12 +112,14 @@ class GrADySEnvironment(ParallelEnv):
                  num_drones: int = 1,
                  num_sensors: int = 2,
                  scenario_size: float = 100,
+                 max_episode_length: float = 10_000,
                  max_seconds_stalled: int = 30,
                  randomize_sensor_positions: bool = False,
                  communication_range: float = 20,
-                 soft_reward: bool = False,
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
+                 soft_reward: bool = False,
+                 state_relative_positions: bool = False,
                  block_out_of_bounds: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
@@ -137,21 +139,32 @@ class GrADySEnvironment(ParallelEnv):
         self.num_sensors = num_sensors
         self.num_drones = num_drones
         self.possible_agents = [f"drone{i}" for i in range(num_drones)]
+        self.max_episode_length = max_episode_length
         self.max_seconds_stalled = max_seconds_stalled
         self.scenario_size = scenario_size
         self.communication_range = communication_range
         self.randomize_sensor_positions = randomize_sensor_positions
-        self.soft_reward = soft_reward
         self.state_num_closest_sensors = state_num_closest_sensors
         self.state_num_closest_drones = state_num_closest_drones
+        self.soft_reward = soft_reward
+        self.state_relative_positions = state_relative_positions
+        self.block_out_of_bounds = block_out_of_bounds
 
     def observation_space(self, agent):
-        # Observe locations of all agents
-        self_position = 2
-        agent_positions = self.state_num_closest_drones * 2
-        sensor_positions = self.state_num_closest_sensors * 2
+        if self.state_relative_positions:
+            self_position = 2
+            agent_positions = self.state_num_closest_drones * 2
+            sensor_positions = self.state_num_closest_sensors * 2
 
-        return Box(0, 1, shape=(self_position + agent_positions + sensor_positions,))
+            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions,))
+        else:
+            # Observe locations of all agents
+            agent_positions = self.num_drones * 2
+            agent_index = 1
+            sensor_positions = self.num_sensors * 2
+            sensor_visited = self.num_sensors
+
+            return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited,))
 
     def action_space(self, agent):
         # Drone can move in any direction
@@ -179,7 +192,7 @@ class GrADySEnvironment(ParallelEnv):
         # Closing the simulator
         self.simulator._finalize_simulation()
 
-    def observe_simulation(self):
+    def observe_simulation_relative_positions(self):
         unvisited_sensor_count = self.num_sensors - self.sensors_collected
         unvisited_sensor_locations = np.zeros((unvisited_sensor_count, 2))
 
@@ -225,9 +238,38 @@ class GrADySEnvironment(ParallelEnv):
             ])
         return state
 
+    def observe_simulation_absolute_positions(self):
+        sensor_locations = np.zeros(self.num_sensors * 2)
+        sensor_visited = np.zeros(self.num_sensors)
+        for i in range(self.num_sensors):
+            sensor_node = self.simulator.get_node(self.sensor_node_ids[i])
+            sensor_locations[i * 2] = sensor_node.position[0] / self.scenario_size
+            sensor_locations[i * 2 + 1] = sensor_node.position[1] / self.scenario_size
+
+            sensor_visited[i] = int(sensor_node.protocol_encapsulator.protocol.has_collected)
+
+        agent_positions = np.zeros(self.num_drones * 2)
+        for i in range(self.num_drones):
+            agent_node = self.simulator.get_node(self.agent_node_ids[i])
+            agent_positions[i * 2] = agent_node.position[0] / self.scenario_size
+            agent_positions[i * 2 + 1] = agent_node.position[1] / self.scenario_size
+
+        general_observations = np.concatenate([sensor_locations, sensor_visited, agent_positions])
+
+        state = {}
+        for agent_index in range(self.num_drones):
+            # General observations and agent index
+            state[f"drone{agent_index}"] = np.concatenate([general_observations, [agent_index / self.num_drones]])
+        return state
+
+    def observe_simulation(self):
+        if self.state_relative_positions:
+            return self.observe_simulation_relative_positions()
+        else:
+            return self.observe_simulation_absolute_positions()
+
     def detect_out_of_bounds_agent(self, agent: Node) -> bool:
         return abs(agent.position[0]) > self.scenario_size or abs(agent.position[1]) > self.scenario_size
-
 
     def reset(self, seed=None, options=None):
         """
@@ -241,7 +283,8 @@ class GrADySEnvironment(ParallelEnv):
 
         builder = SimulationBuilder(SimulationConfiguration(
             debug=False,
-            execution_logging=False
+            execution_logging=False,
+            duration=self.max_episode_length
         ))
         builder.add_handler(CommunicationHandler(CommunicationMedium(
             transmission_range=self.communication_range

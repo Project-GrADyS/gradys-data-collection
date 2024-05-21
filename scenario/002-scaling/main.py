@@ -81,23 +81,31 @@ class Args:
     early_stopping_tolerance: float = 0.02
     """the tolerance of early stopping"""
 
+    # Legacy options
     soft_reward: bool = True
     """if toggled, soft reward will be used"""
+    state_relative_positions: bool = True
+    """if toggled, relative positions will be used in the state"""
+    train_once_for_each_agent: bool = True
+    """if toggled, a training iteration will be done for each agent at each timestep"""
+    block_out_of_bounds: bool = True
+    """if toggled, the agent will be blocked if it goes out of bounds. If off the agent will be punished instead"""
+    max_episode_length: float = 10_000
+    """the maximum length of the episode"""
+
+
     state_num_closest_sensors: int = 2
     """the number of closest sensors to consider in the state"""
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
-    block_out_of_bounds: bool = True
-    """if toggled, the agent will be blocked if it goes out of bounds. If off the agent will be punished instead"""
-
-
     algorithm_iteration_interval: float = 0.5
-
     max_seconds_stalled: int = 30
     num_drones: int = 1
     num_sensors: int = 2
     scenario_size: float = 100
     randomize_sensor_positions: bool = True
+
+
 
 
 def make_env(render_mode=None):
@@ -106,12 +114,14 @@ def make_env(render_mode=None):
         render_mode=render_mode,
         num_drones=args.num_drones,
         num_sensors=args.num_sensors,
+        max_episode_length=args.max_episode_length,
         max_seconds_stalled=args.max_seconds_stalled,
         scenario_size=args.scenario_size,
         randomize_sensor_positions=args.randomize_sensor_positions,
         soft_reward=args.soft_reward,
         state_num_closest_sensors=args.state_num_closest_sensors,
         state_num_closest_drones=args.state_num_closest_drones,
+        state_relative_positions=args.state_relative_positions,
         block_out_of_bounds=args.block_out_of_bounds,
     )
 
@@ -367,7 +377,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         # ALGO LOGIC: training.
         if global_step > args.learning_starts:
-            for _ in env.agents:
+            training_step_count = args.num_drones if args.train_once_for_each_agent else 1
+            for _ in range(training_step_count):
                 data = rb.sample(args.batch_size)
                 with torch.no_grad():
                     next_state_actions = target_actor(data.next_observations)
