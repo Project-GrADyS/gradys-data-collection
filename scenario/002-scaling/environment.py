@@ -46,6 +46,8 @@ class DroneProtocol(IProtocol):
     current_position: tuple[float, float, float]
 
     def act(self, action, coordinate_limit: float) -> None:
+        self.provider.tracked_variables['current_action'] = action.tolist()
+
         direction: float = action[0] * 2 * np.pi
 
         unit_vector = [np.cos(direction), np.sin(direction)]
