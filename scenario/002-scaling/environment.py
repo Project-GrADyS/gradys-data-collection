@@ -116,13 +116,13 @@ class GrADySEnvironment(ParallelEnv):
                  scenario_size: float = 100,
                  max_episode_length: float = 10_000,
                  max_seconds_stalled: int = 30,
-                 randomize_sensor_positions: bool = False,
+                 randomize_sensor_positions: bool = True,
                  communication_range: float = 20,
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
-                 soft_reward: bool = False,
-                 state_relative_positions: bool = False,
-                 block_out_of_bounds: bool = False):
+                 soft_reward: bool = True,
+                 state_relative_positions: bool = True,
+                 block_out_of_bounds: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
