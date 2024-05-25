@@ -98,6 +98,9 @@ class Args:
     """the number of closest sensors to consider in the state"""
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
+    direction_and_speed: bool = True
+    """if toggled, the direction and speed will be used as an action, else only the direction will be used"""
+
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     num_drones: int = 1
@@ -123,6 +126,7 @@ def make_env(render_mode=None):
         state_num_closest_drones=args.state_num_closest_drones,
         state_relative_positions=args.state_relative_positions,
         block_out_of_bounds=args.block_out_of_bounds,
+        direction_and_speed=args.direction_and_speed,
     )
 
 
