@@ -84,7 +84,7 @@ class DroneProtocol(IProtocol):
         command = BroadcastMessageCommand("")
         self.provider.send_communication_command(command)
 
-        self.provider.schedule_timer("", self.provider.current_time() + 1)
+        self.provider.schedule_timer("", self.provider.current_time() + 0.1)
 
     def finish(self) -> None:
         pass
