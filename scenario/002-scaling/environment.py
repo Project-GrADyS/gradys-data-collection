@@ -386,6 +386,8 @@ class GrADySEnvironment(ParallelEnv):
         """
         self.episode_duration += 1
 
+        end_cause: str | None = None
+
         # If a user passes in actions with no agents, then just return empty observations, etc.
         if not actions:
             self.agents = []
@@ -414,6 +416,7 @@ class GrADySEnvironment(ParallelEnv):
 
             simulation_ongoing = self.simulator.step_simulation()
             if not simulation_ongoing:
+                end_cause = "time_limit_exceeded"
                 break
 
         sensors_collected = sum(
@@ -428,8 +431,12 @@ class GrADySEnvironment(ParallelEnv):
 
         if self.stall_duration > self.max_seconds_stalled:
             simulation_ongoing = False
+            end_cause = "stalled"
 
         all_sensors_collected = sensors_collected == self.num_sensors
+
+        if all_sensors_collected:
+            end_cause = "all_sensors_collected"
 
         if self.soft_reward:
             reward = sensors_collected - sensors_collected_before
@@ -446,6 +453,7 @@ class GrADySEnvironment(ParallelEnv):
                 if self.detect_out_of_bounds_agent(agent_node):
                     simulation_ongoing = False
                     rewards[self.agents[index]] = -1
+                    end_cause = "out_of_bounds"
 
         self.reward_sum += rewards[self.agents[0]]
         self.max_reward = max(self.max_reward, *rewards.values())
@@ -468,6 +476,7 @@ class GrADySEnvironment(ParallelEnv):
                     "max_reward": self.max_reward,
                     "episode_duration": self.episode_duration,
                     "success": all_sensors_collected,
+                    "cause": end_cause
                 } for agent in self.agents
             }
 
