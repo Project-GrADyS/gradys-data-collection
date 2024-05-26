@@ -21,10 +21,9 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=1", "--exp_name=1-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ActionAndSpeed", "--checkpoint-freq=1000000", "--total-timesteps=10000000"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ActionAndSpeed", "--checkpoint-freq=1000000", "--total-timesteps=10000000"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=7", "--exp_name=7-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ActionAndSpeed", "--checkpoint-freq=1000000", "--total-timesteps=10000000"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=10", "--exp_name=10-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ActionAndSpeed", "--checkpoint-freq=1000000", "--total-timesteps=10000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ExpNoise", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--exploration-noise=0.1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ExpNoise", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--exploration-noise=0.01"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=ExpNoise", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--exploration-noise=0.3"],
 ]
 
 def run_experiment(experiment):
