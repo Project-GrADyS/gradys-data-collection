@@ -3,6 +3,7 @@ import os
 import random
 import time
 from dataclasses import dataclass
+from typing import Literal
 
 import gymnasium as gym
 import numpy as np
@@ -14,7 +15,7 @@ import tyro
 from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 
-from environment import GrADySEnvironment
+from environment import GrADySEnvironment, StateMode
 
 
 @dataclass
@@ -84,8 +85,6 @@ class Args:
     # Legacy options
     soft_reward: bool = True
     """if toggled, soft reward will be used"""
-    state_relative_positions: bool = True
-    """if toggled, relative positions will be used in the state"""
     train_once_for_each_agent: bool = True
     """if toggled, a training iteration will be done for each agent at each timestep"""
     block_out_of_bounds: bool = True
@@ -93,11 +92,13 @@ class Args:
     max_episode_length: float = 10_000
     """the maximum length of the episode"""
 
-
+    state_mode: StateMode = "relative"
+    """chooses the state mode to use"""
     state_num_closest_sensors: int = 2
     """the number of closest sensors to consider in the state"""
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
+
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     num_drones: int = 1
@@ -121,7 +122,7 @@ def make_env(render_mode=None):
         soft_reward=args.soft_reward,
         state_num_closest_sensors=args.state_num_closest_sensors,
         state_num_closest_drones=args.state_num_closest_drones,
-        state_relative_positions=args.state_relative_positions,
+        state_mode=args.state_mode,
         block_out_of_bounds=args.block_out_of_bounds,
     )
 
