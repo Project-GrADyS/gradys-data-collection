@@ -7,7 +7,7 @@ import gymnasium
 import numpy as np
 from gradysim.protocol.interface import IProtocol
 from gradysim.protocol.messages.communication import BroadcastMessageCommand
-from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand, SetSpeedMobilityCommand
+from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand
 from gradysim.protocol.messages.telemetry import Telemetry
 from gradysim.simulator.event import EventLoop
 from gradysim.simulator.handler.communication import CommunicationHandler, CommunicationMedium
@@ -67,13 +67,6 @@ class DroneProtocol(IProtocol):
         command = GotoCoordsMobilityCommand(*destination)
         self.provider.send_mobility_command(command)
 
-        # If the action has a speed component, set the speed
-        if len(action) == 2:
-            speed: float = action[1] * 12
-
-            speed_command = SetSpeedMobilityCommand(speed)
-            self.provider.send_mobility_command(speed_command)
-
     def initialize(self) -> None:
         self.current_position = (0, 0, 0)
         self._collect_packets()
@@ -129,8 +122,7 @@ class GrADySEnvironment(ParallelEnv):
                  state_num_closest_drones: int = 2,
                  soft_reward: bool = True,
                  state_relative_positions: bool = True,
-                 block_out_of_bounds: bool = True,
-                 direction_and_speed: bool = True):
+                 block_out_of_bounds: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -159,7 +151,6 @@ class GrADySEnvironment(ParallelEnv):
         self.soft_reward = soft_reward
         self.state_relative_positions = state_relative_positions
         self.block_out_of_bounds = block_out_of_bounds
-        self.direction_and_speed = direction_and_speed
 
     def observation_space(self, agent):
         if self.state_relative_positions:
@@ -178,12 +169,8 @@ class GrADySEnvironment(ParallelEnv):
             return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited,))
 
     def action_space(self, agent):
-        if self.direction_and_speed:
-            # Drone can move in any direction
-            return Box(0, 1, shape=(2,))
-        else:
-            # Drone can move in any direction
-            return Box(0, 1, shape=(1,))
+        # Drone can move in any direction
+        return Box(0, 1, shape=(1,))
 
     def render(self):
         """
