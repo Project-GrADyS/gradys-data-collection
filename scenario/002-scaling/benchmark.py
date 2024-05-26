@@ -21,7 +21,11 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=normal-relative", "--no-checkpoint-visual-evaluation", "--run-name=StateNormalized", "--checkpoint-freq=1000000", "--total-timesteps=10000000"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=all_positions", "--no-checkpoint-visual-evaluation", "--run-name=StateModes", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-mode=all_positions"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=absolute", "--no-checkpoint-visual-evaluation", "--run-name=StateModes", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-mode=absolute"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=relative", "--no-checkpoint-visual-evaluation", "--run-name=StateModes", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-mode=relative"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=distance_angle", "--no-checkpoint-visual-evaluation", "--run-name=StateModes", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-mode=distance_angle"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=angle", "--no-checkpoint-visual-evaluation", "--run-name=StateModes", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-mode=angle"],
 ]
 
 def run_experiment(experiment):
