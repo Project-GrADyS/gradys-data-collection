@@ -21,9 +21,7 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=0.1-exp", "--no-checkpoint-visual-evaluation", "--run-name=ExpNoise", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--exploration-noise=0.1"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=0.01-exp", "--no-checkpoint-visual-evaluation", "--run-name=ExpNoise", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--exploration-noise=0.01"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=0.3-exp", "--no-checkpoint-visual-evaluation", "--run-name=ExpNoise", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--exploration-noise=0.3"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=normal-relative", "--no-checkpoint-visual-evaluation", "--run-name=StateNormalized", "--checkpoint-freq=1000000", "--total-timesteps=10000000"],
 ]
 
 def run_experiment(experiment):

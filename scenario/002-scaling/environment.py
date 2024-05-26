@@ -17,6 +17,7 @@ from gradysim.simulator.handler.timer import TimerHandler
 from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration
 from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
+from gradysim.protocol.position import squared_distance
 from gymnasium.spaces import Box
 from pettingzoo import ParallelEnv
 
@@ -154,11 +155,10 @@ class GrADySEnvironment(ParallelEnv):
 
     def observation_space(self, agent):
         if self.state_relative_positions:
-            self_position = 2
             agent_positions = self.state_num_closest_drones * 2
             sensor_positions = self.state_num_closest_sensors * 2
 
-            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions,))
+            return Box(0, 1, shape=(agent_positions + sensor_positions,))
         else:
             # Observe locations of all agents
             agent_positions = self.num_drones * 2
@@ -195,48 +195,35 @@ class GrADySEnvironment(ParallelEnv):
         self.simulator._finalize_simulation()
 
     def observe_simulation_relative_positions(self):
-        unvisited_sensor_count = self.num_sensors - self.sensors_collected
-        unvisited_sensor_locations = np.zeros((unvisited_sensor_count, 2))
+        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
+        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
+                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
 
-        unvisited_index = 0
-        for i in range(self.num_sensors):
-            sensor_node = self.simulator.get_node(self.sensor_node_ids[i])
-            if sensor_node.protocol_encapsulator.protocol.has_collected:
-                continue
-
-            unvisited_sensor_locations[unvisited_index] = np.array(sensor_node.position[:2]) / self.scenario_size
-            unvisited_index += 1
-
-        agent_positions = np.zeros((self.num_drones, 2))
-        for i in range(self.num_drones):
-            agent_node = self.simulator.get_node(self.agent_node_ids[i])
-            agent_positions[i] = np.array(agent_node.position[:2]) / self.scenario_size
+        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
 
         state = {}
         for agent_index in range(self.num_drones):
-            agent_distances = np.linalg.norm(
-                agent_positions - agent_positions[agent_index], axis=1
-            )
-            closest_agent_indices = np.argsort(agent_distances)[1:self.state_num_closest_drones + 1]
+            agent_position = agent_nodes[agent_index].position
 
-            unvisited_sensor_distances = np.linalg.norm(
-                unvisited_sensor_locations - agent_positions[agent_index], axis=1
-            )
-            closest_sensor_indices = np.argsort(unvisited_sensor_distances)[:self.state_num_closest_sensors]
+            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
 
-            closest_agents = agent_positions[closest_agent_indices, :]
-            padded_closes_agents = np.pad(closest_agents,
-                                          ((0, self.state_num_closest_drones - len(closest_agents)),
-                                           (0, 0)))
-            closest_sensors = unvisited_sensor_locations[closest_sensor_indices, :]
-            padded_closest_sensors = np.pad(closest_sensors,
-                                            ((0, self.state_num_closest_sensors - len(closest_sensors)),
-                                             (0, 0)))
+            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes, key=lambda sensor_node: squared_distance(sensor_node.position, agent_position))
+
+            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
+                closest_unvisited_sensors[i] = sensor_node.position[:2]
+
+            closest_agents = np.zeros((self.state_num_closest_drones, 2))
+
+            sorted_agents = sorted(agent_nodes, key=lambda agent_node: squared_distance(agent_node.position, agent_position))
+
+            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
+                closest_agents[i] = agent_node.position[:2]
+
+            agent_position_array = np.array(agent_position[:2])
 
             state[f"drone{agent_index}"] = np.concatenate([
-                agent_positions[agent_index],
-                padded_closes_agents.flatten(),
-                padded_closest_sensors.flatten()
+                (agent_position_array - closest_agents).flatten() / self.scenario_size,
+                (agent_position_array - closest_unvisited_sensors).flatten() / self.scenario_size
             ])
         return state
 
