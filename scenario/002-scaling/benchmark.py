@@ -21,10 +21,15 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=1-closest", "--no-checkpoint-visual-evaluation", "--run-name=ClosestSensors", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=2-closest", "--no-checkpoint-visual-evaluation", "--run-name=ClosestSensors", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=2"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=3-closest", "--no-checkpoint-visual-evaluation", "--run-name=ClosestSensors", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=3"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=1", "--num-sensors=4", "--exp_name=4-closest", "--no-checkpoint-visual-evaluation", "--run-name=ClosestSensors", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=4"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=2", "--num-sensors=2", "--exp_name=2-drone-2-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=3", "--num-sensors=2", "--exp_name=3-drone-2-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=2", "--exp_name=4-drone-2-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=2", "--num-sensors=4", "--exp_name=2-drone-4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=3", "--num-sensors=4", "--exp_name=3-drone-4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=4", "--exp_name=4-drone-4-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=2", "--num-sensors=8", "--exp_name=2-drone-8-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=3", "--num-sensors=8", "--exp_name=3-drone-8-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
+    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=8", "--exp_name=4-drone-8-sensor", "--no-checkpoint-visual-evaluation", "--run-name=MultiAgent", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
 ]
 
 def run_experiment(experiment):
