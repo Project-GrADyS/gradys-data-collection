@@ -125,7 +125,7 @@ class GrADySEnvironment(ParallelEnv):
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
                  soft_reward: bool = True,
-                 state_mode: StateMode = True,
+                 state_mode: StateMode = "relative",
                  block_out_of_bounds: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:

@@ -21,11 +21,12 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=8", "--exp_name=1-closest", "--no-checkpoint-visual-evaluation", "--run-name=4SensorClosest", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=1"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=8", "--exp_name=2-closest", "--no-checkpoint-visual-evaluation", "--run-name=4SensorClosest", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=2"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=8", "--exp_name=3-closest", "--no-checkpoint-visual-evaluation", "--run-name=4SensorClosest", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=3"],
-    ["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=8", "--exp_name=4-closest", "--no-checkpoint-visual-evaluation", "--run-name=4SensorClosest", "--checkpoint-freq=1000000", "--total-timesteps=10000000", "--state-num-closest-sensors=4"],
+
 ]
+
+for s in [1, 2, 4]:
+    for a in [0, 1, 3]:
+        experiments.append(["python", "main.py", "--scenario_size=100", "--num-drones=4", "--num-sensors=8", f"--exp_name={s}-sensor-{a}-agent", "--no-checkpoint-visual-evaluation", "--run-name=Closest", "--checkpoint-freq=1000000", "--total-timesteps=10000000", f"--state-num-closest-sensors={s}", f"--state-num-closest-drones={a}"])
 
 def run_experiment(experiment):
     print("Running experiment: ", experiment)
