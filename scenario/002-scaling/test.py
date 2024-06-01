@@ -1,32 +1,37 @@
+from collections import defaultdict
+
 from main import Actor
 from environment import GrADySEnvironment
 import torch
 
 # Loading the model
-model_path = f"runs/sensors/3-sensor-soft/3-sensor-soft-checkpoint223.cleanrl_model"
+model_path = f"runs/closest/closest-1-sensor-0-agent/1-sensor-0-agent-checkpoint191.cleanrl_model"
 print(f"Loading model from {model_path}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 actor_model = torch.load(model_path, map_location=device)[0]
 
 if __name__ == "__main__":
-    for i in range(10):
-        print(f"Running experiment: repetition {i}")
-        # Creating environment
-        env = GrADySEnvironment(
-            algorithm_iteration_interval=0.5,
-            render_mode="visual",
-            num_drones=1,
-            num_sensors=3,
-            max_seconds_stalled=30,
-            scenario_size=100,
-            randomize_sensor_positions=True,
-            soft_reward=True,
-            state_num_closest_sensors=2,
-            state_num_closest_drones=2,
-        )
+    failure_causes = defaultdict(int)
 
-        actor = Actor(env.action_space(0), env.observation_space(0)).to(device)
-        actor.load_state_dict(actor_model)
+    env = GrADySEnvironment(
+        algorithm_iteration_interval=0.5,
+        num_drones=4,
+        num_sensors=8,
+        max_seconds_stalled=30,
+        scenario_size=100,
+        render_mode="visual",
+        randomize_sensor_positions=True,
+        soft_reward=True,
+        state_num_closest_sensors=1,
+        state_num_closest_drones=0,
+    )
+    actor = Actor(env.action_space(0), env.observation_space(0)).to(device)
+    actor.load_state_dict(actor_model)
+
+    total_runs = 1_000
+    for i in range(total_runs):
+        if i % 100 == 0:
+            print(f"Running experiment: repetition {i}/{total_runs}")
 
         # Running the model
         obs, _ = env.reset()
@@ -39,6 +44,12 @@ if __name__ == "__main__":
             next_obs, rewards, terminations, truncations, infos = env.step(actions)
             obs = next_obs
             if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
-                print(f"Experiment finished. Success: {infos[env.agents[0]]['success']}")
+                cause = infos[env.agents[0]]["cause"]
+                failure_causes[cause] += 1
                 break
         env.close()
+
+    print("-" * 80)
+    print("Episode ending causes:")
+    for cause, count in failure_causes.items():
+        print(f"{cause}: {count/total_runs:.2%}")
