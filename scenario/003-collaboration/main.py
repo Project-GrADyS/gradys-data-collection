@@ -105,6 +105,8 @@ class Args:
     num_sensors: int = 2
     scenario_size: float = 100
     randomize_sensor_positions: bool = True
+    min_sensor_priority: float = 0.1
+    max_sensor_priority: float = 1.0
 
 
 
@@ -119,11 +121,12 @@ def make_env(render_mode=None):
         max_seconds_stalled=args.max_seconds_stalled,
         scenario_size=args.scenario_size,
         randomize_sensor_positions=args.randomize_sensor_positions,
-        soft_reward=args.soft_reward,
         state_num_closest_sensors=args.state_num_closest_sensors,
         state_num_closest_drones=args.state_num_closest_drones,
         state_mode=args.state_mode,
         block_out_of_bounds=args.block_out_of_bounds,
+        min_sensor_priority=args.min_sensor_priority,
+        max_sensor_priority=args.max_sensor_priority,
     )
 
 

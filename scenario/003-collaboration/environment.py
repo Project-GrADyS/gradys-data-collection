@@ -24,26 +24,31 @@ from pettingzoo import ParallelEnv
 
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
 
+def create_sensor(priority: float):
+    class SensorProtocol(IProtocol):
+        has_collected: bool
+        priority: float
 
-class SensorProtocol(IProtocol):
-    has_collected: bool
+        def initialize(self) -> None:
+            self.priority = priority
+            self.provider.tracked_variables["priority"] = priority
 
-    def initialize(self) -> None:
-        self.has_collected = False
-        self.provider.tracked_variables["collected"] = self.has_collected
+            self.has_collected = False
+            self.provider.tracked_variables["collected"] = self.has_collected
 
-    def handle_packet(self, message: str) -> None:
-        self.has_collected = True
-        self.provider.tracked_variables["collected"] = self.has_collected
+        def handle_packet(self, message: str) -> None:
+            self.has_collected = True
+            self.provider.tracked_variables["collected"] = self.has_collected
 
-    def handle_timer(self, timer: str) -> None:
-        pass
+        def handle_timer(self, timer: str) -> None:
+            pass
 
-    def handle_telemetry(self, telemetry: Telemetry) -> None:
-        pass
+        def handle_telemetry(self, telemetry: Telemetry) -> None:
+            pass
 
-    def finish(self) -> None:
-        pass
+        def finish(self) -> None:
+            pass
+    return SensorProtocol
 
 
 class DroneProtocol(IProtocol):
@@ -126,7 +131,9 @@ class GrADySEnvironment(ParallelEnv):
                  state_num_closest_drones: int = 2,
                  soft_reward: bool = True,
                  state_mode: StateMode = "relative",
-                 block_out_of_bounds: bool = True):
+                 block_out_of_bounds: bool = True,
+                 min_sensor_priority: float = 0.1,
+                 max_sensor_priority: float = 1,):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -155,6 +162,8 @@ class GrADySEnvironment(ParallelEnv):
         self.soft_reward = soft_reward
         self.state_mode = state_mode
         self.block_out_of_bounds = block_out_of_bounds
+        self.min_sensor_priority = min_sensor_priority
+        self.max_sensor_priority = max_sensor_priority
 
     def observation_space(self, agent):
         if self.state_mode == "absolute":
@@ -451,9 +460,11 @@ class GrADySEnvironment(ParallelEnv):
                            (-self.scenario_size, -self.scenario_size), (self.scenario_size, -self.scenario_size),
                            (-self.scenario_size, self.scenario_size)]
         for i in range(self.num_sensors):
+            sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
+
             # Place sensors outside commuincation range but inside the scenario
             if self.randomize_sensor_positions:
-                self.sensor_node_ids.append(builder.add_node(SensorProtocol, (
+                self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
                     random.uniform(self.communication_range + 1, self.scenario_size) * (
                         1 if random.random() < 0.5 else -1),
                     random.uniform(self.communication_range + 1, self.scenario_size) * (
@@ -461,7 +472,7 @@ class GrADySEnvironment(ParallelEnv):
                     0
                 )))
             else:
-                self.sensor_node_ids.append(builder.add_node(SensorProtocol, (
+                self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
                     fixed_positions[i][0],
                     fixed_positions[i][1],
                     0
