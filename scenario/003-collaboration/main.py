@@ -71,7 +71,7 @@ class Args:
     noise_clip: float = 0.5
     """noise clip parameter of the Target Policy Smoothing Regularization"""
 
-    early_stopping: bool = True
+    early_stopping: bool = False
     """if toggled, early stopping will be enabled based on the success rate"""
     early_stopping_beginning: int = 1_000
     """the beginning of early stopping"""
@@ -83,13 +83,11 @@ class Args:
     """the tolerance of early stopping"""
 
     # Legacy options
-    soft_reward: bool = True
-    """if toggled, soft reward will be used"""
     train_once_for_each_agent: bool = True
     """if toggled, a training iteration will be done for each agent at each timestep"""
     block_out_of_bounds: bool = True
     """if toggled, the agent will be blocked if it goes out of bounds. If off the agent will be punished instead"""
-    max_episode_length: float = 10_000
+    max_episode_length: float = 500
     """the maximum length of the episode"""
 
     state_mode: StateMode = "relative"
@@ -232,7 +230,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     # Statistics
     episode_count = 0
-    number_of_successes = 0
+    all_collected_count = 0
+    all_avg_collection_times = 0
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -335,8 +334,11 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
             info = infos[env.agents[0]]
 
-            avg_reward = sum([info["avg_reward"] for info in infos.values()]) / len(infos)
-            max_reward = max([info["max_reward"] for info in infos.values()])
+            avg_reward = info["avg_reward"]
+            max_reward = info["max_reward"]
+            sum_reward = info["sum_reward"]
+
+            avg_collection_time = info["avg_collection_time"]
 
             writer.add_scalar(
                 "charts/avg_reward",
@@ -349,19 +351,30 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 global_step,
             )
             writer.add_scalar(
+                "charts/sum_reward",
+                sum_reward,
+                global_step,
+            )
+            writer.add_scalar(
                 "charts/episode_duration",
                 info["episode_duration"],
                 global_step,
             )
-            number_of_successes += info["success"]
+            all_avg_collection_times += avg_collection_time
             writer.add_scalar(
-                "charts/success_rate",
-                number_of_successes / episode_count,
+                "charts/avg_collection_time",
+                all_avg_collection_times / episode_count,
+                global_step,
+            )
+            all_collected_count += info["all_collected"]
+            writer.add_scalar(
+                "charts/all_collected_rate",
+                all_collected_count / episode_count,
                 global_step,
             )
 
             if args.early_stopping:
-                if early_stopping(number_of_successes / episode_count, global_step):
+                if early_stopping(all_collected_count / episode_count, global_step):
                     print("Early stopping after", episode_count, "episodes")
                     break
 

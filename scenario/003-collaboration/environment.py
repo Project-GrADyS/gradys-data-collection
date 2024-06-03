@@ -114,6 +114,7 @@ class GrADySEnvironment(ParallelEnv):
     stall_duration: int
 
     sensors_collected: int
+    collection_times: List[float]
 
     metadata = {"render_modes": ["visual", "console"], "name": "gradys-env"}
 
@@ -123,13 +124,12 @@ class GrADySEnvironment(ParallelEnv):
                  num_drones: int = 1,
                  num_sensors: int = 2,
                  scenario_size: float = 100,
-                 max_episode_length: float = 10_000,
+                 max_episode_length: float = 500,
                  max_seconds_stalled: int = 30,
                  randomize_sensor_positions: bool = True,
                  communication_range: float = 20,
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
-                 soft_reward: bool = True,
                  state_mode: StateMode = "relative",
                  block_out_of_bounds: bool = True,
                  min_sensor_priority: float = 0.1,
@@ -159,7 +159,6 @@ class GrADySEnvironment(ParallelEnv):
         self.randomize_sensor_positions = randomize_sensor_positions
         self.state_num_closest_sensors = state_num_closest_sensors
         self.state_num_closest_drones = state_num_closest_drones
-        self.soft_reward = soft_reward
         self.state_mode = state_mode
         self.block_out_of_bounds = block_out_of_bounds
         self.min_sensor_priority = min_sensor_priority
@@ -497,6 +496,7 @@ class GrADySEnvironment(ParallelEnv):
         self.reward_sum = 0
         self.max_reward = -math.inf
         self.sensors_collected = 0
+        self.collection_times = [self.max_episode_length for _ in range(self.num_sensors)]
 
         return self.observe_simulation(), {}
 
@@ -526,10 +526,10 @@ class GrADySEnvironment(ParallelEnv):
             coordinate_limit = self.scenario_size if self.block_out_of_bounds else float("inf")
             agent_node.protocol_encapsulator.protocol.act(action, coordinate_limit)
 
-        sensors_collected_before = sum(
+        sensor_is_collected_before = [
             self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
             for sensor_id in self.sensor_node_ids
-        )
+        ]
 
         # Simulating for a single iteration
         self.algorithm_iteration_finished = False
@@ -545,12 +545,12 @@ class GrADySEnvironment(ParallelEnv):
                 end_cause = "time_limit_exceeded"
                 break
 
-        sensors_collected = sum(
+        sensor_is_collected = [
             self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
             for sensor_id in self.sensor_node_ids
-        )
+        ]
 
-        if sensors_collected > sensors_collected_before:
+        if sum(sensor_is_collected) > sum(sensor_is_collected_before):
             self.stall_duration = 0
         else:
             self.stall_duration += self.algorithm_iteration_interval
@@ -559,19 +559,25 @@ class GrADySEnvironment(ParallelEnv):
             simulation_ongoing = False
             end_cause = "stalled"
 
-        all_sensors_collected = sensors_collected == self.num_sensors
+        all_sensors_collected = sum(sensor_is_collected) == self.num_sensors
 
         if all_sensors_collected:
             end_cause = "all_sensors_collected"
 
-        if self.soft_reward:
-            reward = sensors_collected - sensors_collected_before
-        else:
-            reward = int(all_sensors_collected)
+        # Calculating reward
+        reward = 0
+        current_timestamp = self.episode_duration * self.algorithm_iteration_interval
+        for index, sensor_id in enumerate(self.sensor_node_ids):
+            if sensor_is_collected[index]:
+                self.collection_times[index] = current_timestamp
+                priority = self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.priority
+                reward += priority * (1 - current_timestamp / self.max_episode_length)
+
+
         rewards = {
             agent: reward for agent in self.agents
         }
-        self.sensors_collected = sensors_collected
+        self.sensors_collected = sum(sensor_is_collected)
 
         if not self.block_out_of_bounds:
             for index in range(len(self.agents)):
@@ -600,8 +606,10 @@ class GrADySEnvironment(ParallelEnv):
                 agent: {
                     "avg_reward": self.reward_sum / self.episode_duration,
                     "max_reward": self.max_reward,
+                    "sum_reward": self.reward_sum,
+                    "avg_collection_time": sum(self.collection_times) / self.num_sensors,
                     "episode_duration": self.episode_duration,
-                    "success": all_sensors_collected,
+                    "all_collected": all_sensors_collected,
                     "cause": end_cause
                 } for agent in self.agents
             }
