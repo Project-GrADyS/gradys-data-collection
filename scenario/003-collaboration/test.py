@@ -5,7 +5,7 @@ from environment import GrADySEnvironment
 import torch
 
 # Loading the model
-model_path = f"runs/closest/closest-1-sensor-0-agent/1-sensor-0-agent-checkpoint191.cleanrl_model"
+model_path = f"runs/GrADyS__2-drone-closest-2-sensor-0-drone__1__1717379166/2-drone-closest-2-sensor-0-drone-checkpoint99.cleanrl_model"
 print(f"Loading model from {model_path}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 actor_model = torch.load(model_path, map_location=device)[0]
@@ -15,15 +15,15 @@ if __name__ == "__main__":
 
     env = GrADySEnvironment(
         algorithm_iteration_interval=0.5,
-        num_drones=4,
-        num_sensors=8,
+        num_drones=2,
+        num_sensors=2,
         max_seconds_stalled=30,
         scenario_size=100,
         render_mode="visual",
         randomize_sensor_positions=True,
-        soft_reward=True,
-        state_num_closest_sensors=1,
+        state_num_closest_sensors=2,
         state_num_closest_drones=0,
+        min_sensor_priority=1
     )
     actor = Actor(env.action_space(0), env.observation_space(0)).to(device)
     actor.load_state_dict(actor_model)
