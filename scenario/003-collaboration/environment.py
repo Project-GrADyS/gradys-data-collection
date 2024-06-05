@@ -568,7 +568,7 @@ class GrADySEnvironment(ParallelEnv):
         reward = 0
         current_timestamp = self.episode_duration * self.algorithm_iteration_interval
         for index, sensor_id in enumerate(self.sensor_node_ids):
-            if sensor_is_collected[index]:
+            if sensor_is_collected[index] and not sensor_is_collected_before[index]:
                 self.collection_times[index] = current_timestamp
                 priority = self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.priority
                 reward += priority * (1 - current_timestamp / self.max_episode_length)
