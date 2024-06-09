@@ -85,8 +85,6 @@ class Args:
     # Legacy options
     train_once_for_each_agent: bool = True
     """if toggled, a training iteration will be done for each agent at each timestep"""
-    block_out_of_bounds: bool = True
-    """if toggled, the agent will be blocked if it goes out of bounds. If off the agent will be punished instead"""
     max_episode_length: float = 500
     """the maximum length of the episode"""
 
@@ -97,16 +95,19 @@ class Args:
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
 
+    centralized_critic: bool = False
+
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
-    num_drones: int = 1
-    num_sensors: int = 2
+    num_drones: int = 2
+    num_sensors: int = 5
     scenario_size: float = 100
     randomize_sensor_positions: bool = True
     min_sensor_priority: float = 0.1
     max_sensor_priority: float = 1.0
 
 
+args = tyro.cli(Args)
 
 
 def make_env(render_mode=None):
@@ -122,28 +123,42 @@ def make_env(render_mode=None):
         state_num_closest_sensors=args.state_num_closest_sensors,
         state_num_closest_drones=args.state_num_closest_drones,
         state_mode=args.state_mode,
-        block_out_of_bounds=args.block_out_of_bounds,
         min_sensor_priority=args.min_sensor_priority,
         max_sensor_priority=args.max_sensor_priority,
     )
 
 
 # ALGO LOGIC: initialize agent here:
-class QNetwork(nn.Module):
-    def __init__(self, action_space, observation_space):
-        super().__init__()
-        self.fc1 = nn.Linear(
-            np.array(observation_space.shape).prod() + np.prod(action_space.shape), 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc3 = nn.Linear(256, 1)
+if args.centralized_critic:
+    class Critic(nn.Module):
+        def __init__(self, action_space, observation_space):
+            super().__init__()
+            self.fc1 = nn.Linear(
+                np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, 256)
+            self.fc2 = nn.Linear(256, 256)
+            self.fc3 = nn.Linear(256, 1)
 
-    def forward(self, x, a):
-        x = torch.cat([x, a], 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
+        def forward(self, x, a):
+            x = torch.cat([x, a], 1)
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
+            return x
+else:
+    class Critic(nn.Module):
+        def __init__(self, action_space, observation_space):
+            super().__init__()
+            self.fc1 = nn.Linear(
+                np.array(observation_space.shape).prod() + np.prod(action_space.shape), 256)
+            self.fc2 = nn.Linear(256, 256)
+            self.fc3 = nn.Linear(256, 1)
 
+        def forward(self, x, a):
+            x = torch.cat([x, a], 1)
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
+            return x
 
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
@@ -164,9 +179,6 @@ class Actor(nn.Module):
         x = F.relu(self.fc2(x))
         x = torch.tanh(self.fc_mu(x))
         return x * self.action_scale + self.action_bias
-
-
-args = tyro.cli(Args)
 
 
 class EarlyStopping:
@@ -250,21 +262,43 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     assert isinstance(action_space, gym.spaces.Box), "only continuous action space is supported"
 
     actor = Actor(action_space, observation_space).to(device)
-    qf1 = QNetwork(action_space, observation_space).to(device)
-    qf1_target = QNetwork(action_space, observation_space).to(device)
+    qf1 = Critic(action_space, observation_space).to(device)
+    qf1_target = Critic(action_space, observation_space).to(device)
     target_actor = Actor(action_space, observation_space).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate)
 
-    rb = ReplayBuffer(
-        args.buffer_size,
-        observation_space,
-        action_space,
-        device,
-        handle_timeout_termination=False,
-    )
+    if args.centralized_critic:
+        extended_observation_space = gym.spaces.Box(
+            low=0,
+            high=1,
+            dtype=np.float32,
+            shape=(*observation_space.shape, args.num_drones),
+        )
+        extended_action_space = gym.spaces.Box(
+            low=action_space.low[0],
+            high=action_space.high[0],
+            dtype=np.float32,
+            shape=(*action_space.shape, args.num_drones,),
+        )
+        rb = ReplayBuffer(
+            args.buffer_size,
+            extended_observation_space,
+            extended_action_space,
+            device,
+            handle_timeout_termination=False,
+        )
+    else:
+        rb = ReplayBuffer(
+            args.buffer_size,
+            observation_space,
+            action_space,
+            device,
+            handle_timeout_termination=False,
+        )
+
     start_time = time.time()
 
     early_stopping = EarlyStopping()
@@ -293,7 +327,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     break
             temp_env.close()
         print("Checkpoint evaluation done")
-
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = env.reset(seed=args.seed)
@@ -378,22 +411,89 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     print("Early stopping after", episode_count, "episodes")
                     break
 
-        # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-        real_next_obs = next_obs.copy()
+        if args.centralized_critic:
+            # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
+            all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents], axis=-1)
+            all_agent_obs = np.stack([obs[agent] for agent in env.agents], axis=-1)
+            all_agent_actions = np.stack([actions[agent] for agent in env.agents], axis=-1)
+            rb.add(
+                all_agent_obs,
+                all_agent_next_obs,
+                all_agent_actions,
+                np.array(rewards[env.agents[0]]),
+                np.array(terminations[env.agents[0]]),
+                [infos.get(agent, {}) for agent in env.agents]
+            )
 
-        for agent in env.agents:
-            rb.add(obs[agent],
-                   real_next_obs[agent],
-                   actions[agent],
-                   np.array([rewards[agent]]),
-                   np.array([terminations[agent]]),
-                   [infos.get(agent, {})])
+            # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
+            obs = next_obs
 
-        # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
-        obs = next_obs
+            # ALGO LOGIC: training.
+            if global_step <= args.learning_starts:
+                continue
+            training_step_count = args.num_drones if args.train_once_for_each_agent else 1
+            for _ in range(training_step_count):
+                data = rb.sample(args.batch_size)
 
-        # ALGO LOGIC: training.
-        if global_step > args.learning_starts:
+                all_next_state_actions = []
+                with torch.no_grad():
+                    for index, agent in enumerate(env.agents):
+                        next_state_actions = target_actor(data.next_observations[:, :, index])
+                        all_next_state_actions.append(next_state_actions)
+
+                next_actions = torch.concatenate(all_next_state_actions, dim=1)
+
+                with torch.no_grad():
+                    next_state = data.next_observations.reshape(data.next_observations.shape[0], -1)
+                    qf1_next_target = qf1_target(next_state, next_actions)
+                    next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * args.gamma * (
+                        qf1_next_target).view(-1)
+
+                current_state = data.observations.reshape(data.observations.shape[0], -1)
+                all_actions = data.actions.reshape(data.actions.shape[0], -1)
+                qf1_a_values = qf1(current_state, all_actions).view(-1)
+                qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+
+                # optimize the model
+                q_optimizer.zero_grad()
+                qf1_loss.backward()
+                q_optimizer.step()
+
+                if global_step % args.policy_frequency == 0:
+                    all_actor_actions = []
+                    for index, agent in enumerate(env.agents):
+                        all_actor_actions.append(actor(data.observations[:, :, index]))
+
+                    actor_actions = torch.cat(all_actor_actions, dim=1)
+
+                    actor_loss = -qf1(current_state, actor_actions).mean()
+                    actor_optimizer.zero_grad()
+                    actor_loss.backward()
+                    actor_optimizer.step()
+
+                    # update the target network
+                    for param, target_param in zip(actor.parameters(), target_actor.parameters()):
+                        target_param.data.lerp_(param.data, args.tau)
+                    for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
+                        target_param.data.lerp_(param.data, args.tau)
+        else:
+            real_next_obs = next_obs.copy()
+
+            for agent in env.agents:
+                rb.add(obs[agent],
+                       real_next_obs[agent],
+                       actions[agent],
+                       np.array([rewards[agent]]),
+                       np.array([terminations[agent]]),
+                       [infos.get(agent, {})])
+
+            # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
+            obs = next_obs
+
+            # ALGO LOGIC: training.
+            if global_step <= args.learning_starts:
+                continue
+
             training_step_count = args.num_drones if args.train_once_for_each_agent else 1
             for _ in range(training_step_count):
                 data = rb.sample(args.batch_size)
@@ -423,13 +523,13 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                         target_param.data.lerp_(param.data, args.tau)
 
-            if global_step % 100 == 0:
-                writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
-                writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
-                writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
-                writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
-                writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
-                print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
+        if global_step % 100 == 0:
+            writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
+            writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
+            writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
+            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
+            print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
             save_checkpoint()

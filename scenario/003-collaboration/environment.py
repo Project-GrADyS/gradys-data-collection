@@ -131,7 +131,6 @@ class GrADySEnvironment(ParallelEnv):
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
                  state_mode: StateMode = "relative",
-                 block_out_of_bounds: bool = True,
                  min_sensor_priority: float = 0.1,
                  max_sensor_priority: float = 1,):
         """
@@ -160,7 +159,6 @@ class GrADySEnvironment(ParallelEnv):
         self.state_num_closest_sensors = state_num_closest_sensors
         self.state_num_closest_drones = state_num_closest_drones
         self.state_mode = state_mode
-        self.block_out_of_bounds = block_out_of_bounds
         self.min_sensor_priority = min_sensor_priority
         self.max_sensor_priority = max_sensor_priority
 
@@ -523,7 +521,7 @@ class GrADySEnvironment(ParallelEnv):
         for index, action in enumerate(actions.values()):
             agent_node = self.simulator.get_node(self.agent_node_ids[index])
 
-            coordinate_limit = self.scenario_size if self.block_out_of_bounds else float("inf")
+            coordinate_limit = self.scenario_size
             agent_node.protocol_encapsulator.protocol.act(action, coordinate_limit)
 
         sensor_is_collected_before = [
@@ -578,14 +576,6 @@ class GrADySEnvironment(ParallelEnv):
             agent: reward for agent in self.agents
         }
         self.sensors_collected = sum(sensor_is_collected)
-
-        if not self.block_out_of_bounds:
-            for index in range(len(self.agents)):
-                agent_node = self.simulator.get_node(self.agent_node_ids[index])
-                if self.detect_out_of_bounds_agent(agent_node):
-                    simulation_ongoing = False
-                    rewards[self.agents[index]] = -1
-                    end_cause = "out_of_bounds"
 
         self.reward_sum += rewards[self.agents[0]]
         self.max_reward = max(self.max_reward, *rewards.values())
