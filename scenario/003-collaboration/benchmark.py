@@ -14,12 +14,8 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--num-drones=1", "--num-sensors=2", "--state_num_closest_sensors=1", "--state-num-closest-drones=0", "--min-sensor-priority=1", "--exp-name", "1-drone-closest-1-sensor-0-drone", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=1", "--num-sensors=2", "--state_num_closest_sensors=2", "--state-num-closest-drones=0", "--min-sensor-priority=1", "--exp-name", "1-drone-closest-2-sensor-0-drone", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--state_num_closest_sensors=1", "--state-num-closest-drones=0", "--min-sensor-priority=1", "--exp-name", "2-drone-closest-1-sensor-0-drone", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--state_num_closest_sensors=2", "--state-num-closest-drones=0", "--min-sensor-priority=1", "--exp-name", "2-drone-closest-2-sensor-0-drone", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--state_num_closest_sensors=1", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--exp-name", "2-drone-closest-1-sensor-1-drone", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--exp-name", "2-drone-closest-2-sensor-1-drone", "--total-timesteps=10000000"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=centralized-critic", "--exp-name=yes",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=centralized-critic", "--exp-name=no",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--no-centralized_critic", "--total-timesteps=10000000"],
 ]
 
 def run_experiment(experiment):
