@@ -95,7 +95,7 @@ class Args:
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
 
-    centralized_critic: bool = False
+    centralized_critic: bool = True
 
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
@@ -275,13 +275,13 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             low=0,
             high=1,
             dtype=np.float32,
-            shape=(*observation_space.shape, args.num_drones),
+            shape=(args.num_drones, *observation_space.shape),
         )
         extended_action_space = gym.spaces.Box(
             low=action_space.low[0],
             high=action_space.high[0],
             dtype=np.float32,
-            shape=(*action_space.shape, args.num_drones,),
+            shape=(args.num_drones, *action_space.shape),
         )
         rb = ReplayBuffer(
             args.buffer_size,
@@ -413,9 +413,9 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         if args.centralized_critic:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-            all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents], axis=-1)
-            all_agent_obs = np.stack([obs[agent] for agent in env.agents], axis=-1)
-            all_agent_actions = np.stack([actions[agent] for agent in env.agents], axis=-1)
+            all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
+            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
+            all_agent_actions = np.stack([actions[agent] for agent in env.agents])
             rb.add(
                 all_agent_obs,
                 all_agent_next_obs,
@@ -438,7 +438,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 all_next_state_actions = []
                 with torch.no_grad():
                     for index, agent in enumerate(env.agents):
-                        next_state_actions = target_actor(data.next_observations[:, :, index])
+                        next_state_actions = target_actor(data.next_observations[:, index])
                         all_next_state_actions.append(next_state_actions)
 
                 next_actions = torch.concatenate(all_next_state_actions, dim=1)
@@ -462,7 +462,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 if global_step % args.policy_frequency == 0:
                     all_actor_actions = []
                     for index, agent in enumerate(env.agents):
-                        all_actor_actions.append(actor(data.observations[:, :, index]))
+                        all_actor_actions.append(actor(data.observations[:, index]))
 
                     actor_actions = torch.cat(all_actor_actions, dim=1)
 
