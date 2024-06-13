@@ -14,18 +14,28 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=tau", "--exp-name=0.005", "--tau=0.005",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=tau", "--exp-name=0.05", "--tau=0.05",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=tau", "--exp-name=0.5", "--tau=0.5",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=policy-frequency", "--exp-name=1", "--policy-frequency=1",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=policy-frequency", "--exp-name=2", "--policy-frequency=2",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=policy-frequency", "--exp-name=3", "--policy-frequency=3",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=lr", "--exp-name=3e-3", "--learning_rate=3e-3",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=lr", "--exp-name=3e-4", "--learning_rate=3e-4",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=lr", "--exp-name=3e-5", "--learning_rate=3e-5",  "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
 ]
 
+excluded_combinations = []
 
+for tau in [0.005, 0.0005]:
+    excluded_combinations.append([tau, 2, 3e-4])
+
+for policy_frequency in [2, 3]:
+    excluded_combinations.append([0.005, policy_frequency, 3e-4])
+
+for lr in [3e-4, 3e-5, 3e-6]:
+    excluded_combinations.append([0.005, 2, lr])
+
+for tau in [0.005, 0.0005]:
+    for policy_frequency in [2, 3]:
+        for lr in [3e-4, 3e-5, 3e-6]:
+            if [tau, policy_frequency, lr] not in excluded_combinations:
+                experiments.append(
+                    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=parameter", f"--exp-name=tau={tau}--policy-frequency={policy_frequency}--lr={lr}", f"--tau={tau}", f"--policy-frequency={policy_frequency}", f"--learning-rate={lr}",   "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=1000000"]
+                )
+
+print("Total experiments: ", len(experiments))
 
 def run_experiment(experiment):
     print("Running experiment: ", experiment)
