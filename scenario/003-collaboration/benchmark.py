@@ -14,8 +14,8 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=centralized", f"--exp-name=yes", f"--tau=0.005", f"--policy-frequency=3", f"--learning-rate=3e-5",   "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=centralized", f"--exp-name=no", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--no-centralized_critic", "--total-timesteps=10000000"]
+    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=id_on_state", f"--exp-name=yes", f"--tau=0.005", f"--policy-frequency=3", f"--learning-rate=3e-5",   "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000", "--id-on-state"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=id_on_state", f"--exp-name=yes", f"--tau=0.005", f"--policy-frequency=3", f"--learning-rate=3e-5",   "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--centralized_critic", "--total-timesteps=10000000", "--no-id-on-state"],
 ]
 
 
