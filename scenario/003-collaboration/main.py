@@ -90,6 +90,8 @@ class Args:
 
     state_mode: StateMode = "relative"
     """chooses the state mode to use"""
+    id_on_state: bool = True
+    """if toggled, the state will be modified to include the agent's ID"""
     state_num_closest_sensors: int = 2
     """the number of closest sensors to consider in the state"""
     state_num_closest_drones: int = 2
@@ -123,6 +125,7 @@ def make_env(render_mode=None):
         state_num_closest_sensors=args.state_num_closest_sensors,
         state_num_closest_drones=args.state_num_closest_drones,
         state_mode=args.state_mode,
+        id_on_state=args.id_on_state,
         min_sensor_priority=args.min_sensor_priority,
         max_sensor_priority=args.max_sensor_priority,
     )

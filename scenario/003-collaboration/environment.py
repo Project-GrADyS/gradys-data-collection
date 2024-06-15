@@ -131,8 +131,9 @@ class GrADySEnvironment(ParallelEnv):
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
                  state_mode: StateMode = "relative",
+                 id_on_state: bool = True,
                  min_sensor_priority: float = 0.1,
-                 max_sensor_priority: float = 1,):
+                 max_sensor_priority: float = 1):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -159,26 +160,28 @@ class GrADySEnvironment(ParallelEnv):
         self.state_num_closest_sensors = state_num_closest_sensors
         self.state_num_closest_drones = state_num_closest_drones
         self.state_mode = state_mode
+        self.id_on_state = id_on_state
         self.min_sensor_priority = min_sensor_priority
         self.max_sensor_priority = max_sensor_priority
 
     def observation_space(self, agent):
+        agent_id = 1 if self.id_on_state else 0
         if self.state_mode == "absolute":
             self_position = 2
             agent_positions = self.state_num_closest_drones * 2
             sensor_positions = self.state_num_closest_sensors * 2
 
-            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions,))
+            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions + agent_id,))
         elif self.state_mode == "distance_angle" or self.state_mode == "relative":
             agent_positions = self.state_num_closest_drones * 2
             sensor_positions = self.state_num_closest_sensors * 2
 
-            return Box(0, 1, shape=(agent_positions + sensor_positions,))
+            return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
         elif self.state_mode == "angle":
             agent_positions = self.state_num_closest_drones * 1
             sensor_positions = self.state_num_closest_sensors * 1
 
-            return Box(0, 1, shape=(agent_positions + sensor_positions,))
+            return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
         elif self.state_mode == "all_positions":
             # Observe locations of all agents
             agent_positions = self.num_drones * 2
@@ -186,7 +189,7 @@ class GrADySEnvironment(ParallelEnv):
             sensor_positions = self.num_sensors * 2
             sensor_visited = self.num_sensors
 
-            return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited,))
+            return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited + agent_id,))
 
     def action_space(self, agent):
         # Drone can move in any direction
@@ -248,7 +251,8 @@ class GrADySEnvironment(ParallelEnv):
 
             state[f"drone{agent_index}"] = np.concatenate([
                 closest_agents.flatten(),
-                closest_unvisited_sensors.flatten()
+                closest_unvisited_sensors.flatten(),
+                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
             ])
         return state
 
@@ -282,7 +286,8 @@ class GrADySEnvironment(ParallelEnv):
 
             state[f"drone{agent_index}"] = np.concatenate([
                 closest_agents,
-                closest_unvisited_sensors
+                closest_unvisited_sensors,
+                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
             ])
         return state
 
@@ -316,7 +321,8 @@ class GrADySEnvironment(ParallelEnv):
 
             state[f"drone{agent_index}"] = np.concatenate([
                 closest_agents.flatten() / self.scenario_size,
-                closest_unvisited_sensors.flatten() / self.scenario_size
+                closest_unvisited_sensors.flatten() / self.scenario_size,
+                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
             ])
         return state
 
@@ -350,7 +356,8 @@ class GrADySEnvironment(ParallelEnv):
             state[f"drone{agent_index}"] = np.concatenate([
                 np.array(agent_position[:2]) / self.scenario_size,
                 closest_agents.flatten() / self.scenario_size,
-                closest_unvisited_sensors.flatten() / self.scenario_size
+                closest_unvisited_sensors.flatten() / self.scenario_size,
+                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
             ])
         return state
 
@@ -376,7 +383,10 @@ class GrADySEnvironment(ParallelEnv):
         state = {}
         for agent_index in range(self.num_drones):
             # General observations and agent index
-            state[f"drone{agent_index}"] = np.concatenate([general_observations, [agent_index / self.num_drones]])
+            state[f"drone{agent_index}"] = np.concatenate([
+                general_observations,
+                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
+            ])
         return state
 
     def observe_simulation(self):
