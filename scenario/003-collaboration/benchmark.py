@@ -14,8 +14,7 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=id_on_state", f"--exp-name=yes", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=10000000", "--id-on-state"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=id_on_state", f"--exp-name=no", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=10000000", "--no-id-on-state"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=id_on_state", f"--exp-name=yes", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
 ]
 
 
