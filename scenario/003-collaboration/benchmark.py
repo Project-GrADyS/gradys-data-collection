@@ -14,14 +14,7 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--num-drones=2", "--num-sensors=2", "--run-name=long", f"--exp-name=2-drones-2-sensors", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=4", "--run-name=long", f"--exp-name=2-drones-4-sensors", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=2", "--num-sensors=8", "--run-name=long", f"--exp-name=2-drones-8-sensors", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=4", "--num-sensors=8", "--run-name=more-agents", f"--exp-name=closest-2-sensors-1-drone", "--state_num_closest_sensors=2", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=4", "--num-sensors=8", "--run-name=more-agents", f"--exp-name=closest-2-sensors-2-drone", "--state_num_closest_sensors=2", "--state-num-closest-drones=2", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=4", "--num-sensors=8", "--run-name=more-agents", f"--exp-name=closest-3-sensors-1-drone", "--state_num_closest_sensors=3", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=4", "--num-sensors=8", "--run-name=more-agents", f"--exp-name=closest-3-sensors-2-drone", "--state_num_closest_sensors=3", "--state-num-closest-drones=2", "--min-sensor-priority=1", "--total-timesteps=20000000"],
-    ["python", "main.py", "--num-drones=4", "--num-sensors=8", "--run-name=more-agents", f"--exp-name=closest-3-sensors-3-drone", "--state_num_closest_sensors=3", "--state-num-closest-drones=3", "--min-sensor-priority=1", "--total-timesteps=20000000"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=8 ", "--run-name=long_more_info", f"--exp-name=2-drones-8-sensors", "--state_num_closest_sensors=8", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
 ]
 
 
