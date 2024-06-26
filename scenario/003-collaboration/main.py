@@ -304,7 +304,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     start_time = time.time()
 
-    early_stopping = EarlyStopping()
 
     def save_checkpoint():
         print("Reached checkpoint at step", global_step)
@@ -408,11 +407,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 all_collected_count / episode_count,
                 global_step,
             )
-
-            if args.early_stopping:
-                if early_stopping(all_collected_count / episode_count, global_step):
-                    print("Early stopping after", episode_count, "episodes")
-                    break
 
         if args.centralized_critic:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
