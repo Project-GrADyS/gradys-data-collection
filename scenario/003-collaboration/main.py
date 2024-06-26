@@ -71,17 +71,6 @@ class Args:
     noise_clip: float = 0.5
     """noise clip parameter of the Target Policy Smoothing Regularization"""
 
-    early_stopping: bool = False
-    """if toggled, early stopping will be enabled based on the success rate"""
-    early_stopping_beginning: int = 1_000
-    """the beginning of early stopping"""
-    early_stopping_patience: int = 10_000
-    """the patience of early stopping"""
-    early_stopping_minimum: float = 0.7
-    """the minimum success rate to consider early stopping"""
-    early_stopping_tolerance: float = 0.02
-    """the tolerance of early stopping"""
-
     # Legacy options
     train_once_for_each_agent: bool = True
     """if toggled, a training iteration will be done for each agent at each timestep"""
@@ -304,30 +293,89 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
     start_time = time.time()
 
-
-    def save_checkpoint():
+    def evaluate_checkpoint():
         print("Reached checkpoint at step", global_step)
         model_path = f"runs/{run_name}/{args.exp_name}-checkpoint{global_step // 10_000}.cleanrl_model"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
 
-        if args.checkpoint_visual_evaluation:
-            print("Visually evaluating the model")
-            temp_env = make_env("visual")
+        temp_env = make_env("visual" if args.checkpoint_visual_evaluation else None)
+
+        actor.eval()
+        target_actor.eval()
+        qf1.eval()
+        qf1_target.eval()
+
+        sum_avg_reward = 0
+        sum_max_reward = 0
+        sum_sum_reward = 0
+        sum_episode_duration = 0
+        sum_avg_collection_time = 0
+        sum_all_collected = 0
+
+        evaluation_runs = 100
+        for i in range(evaluation_runs):
+            print(f"Evaluating model ({i+1}/{evaluation_runs})")
             obs, _ = temp_env.reset(seed=args.seed)
-            for _ in range(100):
+            while True:
+                actions = {}
                 with torch.no_grad():
-                    actions = {}
                     for agent in temp_env.agents:
                         actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
                         actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
                         actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
 
-                next_obs, rewards, terminations, truncations, infos = temp_env.step(actions)
+                next_obs, _, _, _, infos = temp_env.step(actions)
                 obs = next_obs
-                if len(infos) > 0 and "avg_reward" in infos[temp_env.agents[0]]:
+
+                if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
+                    info = infos[env.agents[0]]
+
+                    sum_avg_reward += info["avg_reward"]
+                    sum_max_reward += info["max_reward"]
+                    sum_sum_reward += info["sum_reward"]
+                    sum_episode_duration += info["episode_duration"]
+                    sum_avg_collection_time += info["avg_collection_time"]
+                    sum_all_collected += info["all_collected"]
                     break
-            temp_env.close()
+        
+        writer.add_scalar(
+            "eval/avg_reward",
+            sum_avg_reward / evaluation_runs,
+            global_step,
+        )
+        writer.add_scalar(
+            "eval/max_reward",
+            sum_max_reward / evaluation_runs,
+            global_step,
+        )
+        writer.add_scalar(
+            "eval/sum_reward",
+            sum_sum_reward / evaluation_runs,
+            global_step,
+        )
+        writer.add_scalar(
+            "eval/episode_duration",
+            sum_episode_duration / evaluation_runs,
+            global_step,
+        )
+        writer.add_scalar(
+            "eval/avg_collection_time",
+            sum_avg_collection_time / evaluation_runs,
+            global_step,
+        )
+        writer.add_scalar(
+            "eval/all_collected_rate",
+            sum_all_collected / evaluation_runs,
+            global_step,
+        )
+        temp_env.close()
+
+        actor.train()
+        target_actor.train()
+        qf1.train()
+        qf1_target.train()
+
         print("Checkpoint evaluation done")
 
     # TRY NOT TO MODIFY: start the game
@@ -362,7 +410,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
 
-        # TRY NOT TO MODIFY: record rewards for plotting purposes
+                # TRY NOT TO MODIFY: record rewards for plotting purposes
         if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
             episode_count += 1
             terminated = True
@@ -428,6 +476,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             # ALGO LOGIC: training.
             if global_step <= args.learning_starts:
                 continue
+            
             training_step_count = args.num_drones if args.train_once_for_each_agent else 1
             data = rb.sample(args.batch_size * training_step_count)
 
@@ -517,9 +566,9 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
-            save_checkpoint()
+            evaluate_checkpoint()
 
-    save_checkpoint()
+    evaluate_checkpoint()
     env.close()
     writer.close()
 
