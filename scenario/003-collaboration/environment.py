@@ -126,14 +126,14 @@ class GrADySEnvironment(ParallelEnv):
                  scenario_size: float = 100,
                  max_episode_length: float = 500,
                  max_seconds_stalled: int = 30,
-                 randomize_sensor_positions: bool = True,
                  communication_range: float = 20,
                  state_num_closest_sensors: int = 2,
                  state_num_closest_drones: int = 2,
                  state_mode: StateMode = "relative",
                  id_on_state: bool = True,
                  min_sensor_priority: float = 0.1,
-                 max_sensor_priority: float = 1):
+                 max_sensor_priority: float = 1,
+                 full_random_drone_position: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -156,13 +156,13 @@ class GrADySEnvironment(ParallelEnv):
         self.max_seconds_stalled = max_seconds_stalled
         self.scenario_size = scenario_size
         self.communication_range = communication_range
-        self.randomize_sensor_positions = randomize_sensor_positions
         self.state_num_closest_sensors = state_num_closest_sensors
         self.state_num_closest_drones = state_num_closest_drones
         self.state_mode = state_mode
         self.id_on_state = id_on_state
         self.min_sensor_priority = min_sensor_priority
         self.max_sensor_priority = max_sensor_priority
+        self.full_random_drone_position = full_random_drone_position
 
     def observation_space(self, agent):
         agent_id = 1 if self.id_on_state else 0
@@ -462,36 +462,30 @@ class GrADySEnvironment(ParallelEnv):
 
         self.sensor_node_ids = []
 
-        fixed_positions = [(-self.scenario_size, 0), (self.scenario_size, 0), (0, -self.scenario_size),
-                           (0, self.scenario_size), (self.scenario_size, self.scenario_size),
-                           (-self.scenario_size, -self.scenario_size), (self.scenario_size, -self.scenario_size),
-                           (-self.scenario_size, self.scenario_size)]
         for i in range(self.num_sensors):
             sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
 
             # Place sensors outside commuincation range but inside the scenario
-            if self.randomize_sensor_positions:
-                self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
-                    random.uniform(self.communication_range + 1, self.scenario_size) * (
-                        1 if random.random() < 0.5 else -1),
-                    random.uniform(self.communication_range + 1, self.scenario_size) * (
-                        1 if random.random() < 0.5 else -1),
-                    0
-                )))
-            else:
-                self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
-                    fixed_positions[i][0],
-                    fixed_positions[i][1],
-                    0
-                )))
+            self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
+                random.uniform(-self.scenario_size, -self.scenario_size),
+                random.uniform(-self.scenario_size, -self.scenario_size),
+                0
+            )))
 
         self.agent_node_ids = []
         for i in range(self.num_drones):
-            self.agent_node_ids.append(builder.add_node(DroneProtocol, (
-                random.uniform(-2, 2),
-                random.uniform(-2, 2),
-                0
-            )))
+            if self.full_random_drone_position:
+                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                    random.uniform(-self.scenario_size, self.scenario_size),
+                    random.uniform(-self.scenario_size, self.scenario_size),
+                    0
+                )))
+            else:
+                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                    random.uniform(-2, 2),
+                    random.uniform(-2, 2),
+                    0
+                )))
 
         self.simulator = builder.build()
 
