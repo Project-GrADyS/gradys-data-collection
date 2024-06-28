@@ -465,10 +465,9 @@ class GrADySEnvironment(ParallelEnv):
         for i in range(self.num_sensors):
             sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
 
-            # Place sensors outside commuincation range but inside the scenario
             self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
-                random.uniform(-self.scenario_size, -self.scenario_size),
-                random.uniform(-self.scenario_size, -self.scenario_size),
+                random.uniform(-self.scenario_size, self.scenario_size),
+                random.uniform(-self.scenario_size, self.scenario_size),
                 0
             )))
 
