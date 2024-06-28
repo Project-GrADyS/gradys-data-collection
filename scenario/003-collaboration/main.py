@@ -16,6 +16,7 @@ from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 
 from environment import GrADySEnvironment, StateMode
+from heuristics import create_greedy_heuristics
 
 
 @dataclass
@@ -97,6 +98,7 @@ class Args:
     max_sensor_priority: float = 1.0
     full_random_drone_position: bool = True
 
+    use_heuristics: bool = False
 
 args = tyro.cli(Args)
 
@@ -173,34 +175,7 @@ class Actor(nn.Module):
         return x * self.action_scale + self.action_bias
 
 
-class EarlyStopping:
-    def __init__(self):
-        self.counter = 0
-        self.best_score = None
-        self.blocked = True
-
-    def __call__(self, score, step):
-        if step % 100 == 0:
-            writer.add_scalar("charts/early_stopping_counter", self.counter, step)
-            writer.add_scalar("charts/early_stopping_best_score", self.best_score or 0, step)
-
-        if score >= args.early_stopping_minimum and step >= args.early_stopping_beginning:
-            self.blocked = False
-
-        if self.blocked:
-            return False
-
-        if self.best_score is None:
-            self.best_score = score
-        elif score < self.best_score * (1 + args.early_stopping_tolerance):
-            self.counter += 1
-            if self.counter >= args.early_stopping_patience:
-                return True
-        else:
-            self.best_score = score
-            self.counter = 0
-
-        return False
+heuristics = create_greedy_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
 
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
@@ -321,9 +296,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 actions = {}
                 with torch.no_grad():
                     for agent in temp_env.agents:
-                        actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
-                        actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
-                        actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
+                        if args.use_heuristics:
+                            actions[agent] = heuristics(obs[agent])
+                        else:
+                            actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
+                            actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
+                            actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
 
                 next_obs, _, _, _, infos = temp_env.step(actions)
                 obs = next_obs
@@ -337,6 +315,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     sum_episode_duration += info["episode_duration"]
                     sum_avg_collection_time += info["avg_collection_time"]
                     sum_all_collected += info["all_collected"]
+                    env.close()
                     break
         
         writer.add_scalar(
@@ -388,24 +367,29 @@ poetry run pip install "stable_baselines3==2.0.0a1"
             obs, _ = env.reset(seed=args.seed)
             terminated = False
 
-        # ALGO LOGIC: put action logic here
-        if global_step < args.learning_starts:
+        if args.use_heuristics:
             actions = {
-                agent: action_space.sample() for agent in env.agents
+                agent: heuristics(obs[agent]) for agent in env.agents
             }
         else:
-            with torch.no_grad():
-                actions = {}
-                all_obs = torch.tensor(np.array([obs[agent] for agent in env.agents]),
-                                       device=device,
-                                       dtype=torch.float32)
-                all_actions: torch.Tensor = actor(all_obs)
-                all_actions.add_(torch.normal(torch.zeros_like(all_actions, device=device),
-                                              actor.action_scale * args.exploration_noise))
-                all_actions.clip_(torch.tensor(action_space.low, device=device),
-                                  torch.tensor(action_space.high, device=device))
-                for index, agent in enumerate(env.agents):
-                    actions[agent] = all_actions[index].cpu().numpy()
+            # ALGO LOGIC: put action logic here
+            if global_step < args.learning_starts:
+                actions = {
+                    agent: action_space.sample() for agent in env.agents
+                }
+            else:
+                with torch.no_grad():
+                    actions = {}
+                    all_obs = torch.tensor(np.array([obs[agent] for agent in env.agents]),
+                                           device=device,
+                                           dtype=torch.float32)
+                    all_actions: torch.Tensor = actor(all_obs)
+                    all_actions.add_(torch.normal(torch.zeros_like(all_actions, device=device),
+                                                  actor.action_scale * args.exploration_noise))
+                    all_actions.clip_(torch.tensor(action_space.low, device=device),
+                                      torch.tensor(action_space.high, device=device))
+                    for index, agent in enumerate(env.agents):
+                        actions[agent] = all_actions[index].cpu().numpy()
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
@@ -456,7 +440,9 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                 global_step,
             )
 
-        if args.centralized_critic:
+        if args.use_heuristics:
+            obs = next_obs
+        elif args.centralized_critic:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
             all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
             all_agent_obs = np.stack([obs[agent] for agent in env.agents])
@@ -558,9 +544,10 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                         target_param.data.lerp_(param.data, args.tau)
 
         if global_step % 100 == 0:
-            writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
-            writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
-            writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
+            if not args.use_heuristics:
+                writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
+                writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
+                writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
             writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
             print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))

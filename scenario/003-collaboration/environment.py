@@ -61,16 +61,31 @@ class DroneProtocol(IProtocol):
 
         unit_vector = [np.cos(direction), np.sin(direction)]
 
-        # Waypoint really far into the direction of travel, same height
-        destination = [
-            float(self.current_position[0] + unit_vector[0] * 1e5),
-            float(self.current_position[1] + unit_vector[1] * 1e5),
-            float(self.current_position[2])
-        ]
+        distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
+        distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
 
-        # Bound destination within scenario
-        destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
-        destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
+        # Maintain direction but bound destination within scenario
+        if distance_to_x_edge > 0 and distance_to_y_edge > 0:
+            scale_x = distance_to_x_edge / abs(unit_vector[0])
+            scale_y = distance_to_y_edge / abs(unit_vector[1])
+            scale = min(scale_x, scale_y)
+
+            destination = [
+                self.current_position[0] + unit_vector[0] * scale,
+                self.current_position[1] + unit_vector[1] * scale,
+                0
+            ]
+
+        # If the drone is at the edge of the scenario, prevent it from leaving
+        else:
+            destination = [
+                self.current_position[0] + unit_vector[0] * 1e5,
+                self.current_position[1] + unit_vector[1] * 1e5,
+                0
+            ]
+            # Bound destination within scenario
+            destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
+            destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
 
         # Start travelling in the direction of travel
         command = GotoCoordsMobilityCommand(*destination)
