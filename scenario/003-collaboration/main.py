@@ -43,7 +43,7 @@ class Args:
     """whether to save model checkpoints"""
     checkpoint_freq: int = 1_000_000
     """the frequency of checkpoints"""
-    checkpoint_visual_evaluation: bool = True
+    checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""
     upload_model: bool = False
     """whether to upload the saved model to huggingface"""
