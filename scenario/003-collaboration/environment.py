@@ -108,7 +108,7 @@ class DroneProtocol(IProtocol):
         command = BroadcastMessageCommand("")
         self.provider.send_communication_command(command)
 
-        self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+        self.provider.schedule_timer("", self.provider.current_time() + 0.2)
 
     def finish(self) -> None:
         pass
@@ -584,7 +584,7 @@ class GrADySEnvironment(ParallelEnv):
         reward = 0
         current_timestamp = self.episode_duration * self.algorithm_iteration_interval
         for index, sensor_id in enumerate(self.sensor_node_ids):
-            if sensor_is_collected[index] and not sensor_is_collected_before[index]:
+            if sensor_is_collected[index] and self.collection_times[index] == self.max_episode_length:
                 self.collection_times[index] = current_timestamp
                 priority = self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.priority
                 reward += priority * (1 - current_timestamp / self.max_episode_length)
