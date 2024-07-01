@@ -43,7 +43,7 @@ class Args:
     """whether to save model checkpoints"""
     checkpoint_freq: int = 1_000_000
     """the frequency of checkpoints"""
-    checkpoint_visual_evaluation: bool = False
+    checkpoint_visual_evaluation: bool = True
     """whether to visually evaluate the model at each checkpoint"""
     upload_model: bool = False
     """whether to upload the saved model to huggingface"""
@@ -288,9 +288,10 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         sum_avg_collection_time = 0
         sum_all_collected = 0
 
-        evaluation_runs = 100
+        evaluation_runs = 500
         for i in range(evaluation_runs):
-            print(f"Evaluating model ({i+1}/{evaluation_runs})")
+            if i % 100 == 0:
+                print(f"Evaluating model ({i+1}/{evaluation_runs})")
             obs, _ = temp_env.reset(seed=args.seed)
             while True:
                 actions = {}
@@ -315,8 +316,8 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     sum_episode_duration += info["episode_duration"]
                     sum_avg_collection_time += info["avg_collection_time"]
                     sum_all_collected += info["all_collected"]
-                    env.close()
                     break
+            temp_env.close()
         
         writer.add_scalar(
             "eval/avg_reward",
