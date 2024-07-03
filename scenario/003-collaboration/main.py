@@ -98,6 +98,8 @@ class Args:
     max_sensor_priority: float = 1.0
     full_random_drone_position: bool = True
 
+    model_size: int = 512
+
     use_heuristics: bool = False
 
 args = tyro.cli(Args)
@@ -128,9 +130,9 @@ if args.centralized_critic:
         def __init__(self, action_space, observation_space):
             super().__init__()
             self.fc1 = nn.Linear(
-                np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, 256)
-            self.fc2 = nn.Linear(256, 256)
-            self.fc3 = nn.Linear(256, 1)
+                np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, args.model_size)
+            self.fc2 = nn.Linear(args.model_size, args.model_size)
+            self.fc3 = nn.Linear(args.model_size, 1)
 
         def forward(self, x, a):
             x = torch.cat([x, a], 1)
@@ -143,9 +145,9 @@ else:
         def __init__(self, action_space, observation_space):
             super().__init__()
             self.fc1 = nn.Linear(
-                np.array(observation_space.shape).prod() + np.prod(action_space.shape), 256)
-            self.fc2 = nn.Linear(256, 256)
-            self.fc3 = nn.Linear(256, 1)
+                np.array(observation_space.shape).prod() + np.prod(action_space.shape), args.model_size)
+            self.fc2 = nn.Linear(args.model_size, args.model_size)
+            self.fc3 = nn.Linear(args.model_size, 1)
 
         def forward(self, x, a):
             x = torch.cat([x, a], 1)
@@ -157,9 +159,9 @@ else:
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
-        self.fc1 = nn.Linear(np.array(observation_space.shape).prod(), 256)
-        self.fc2 = nn.Linear(256, 256)
-        self.fc_mu = nn.Linear(256, np.prod(action_space.shape))
+        self.fc1 = nn.Linear(np.array(observation_space.shape).prod(), args.model_size)
+        self.fc2 = nn.Linear(args.model_size, args.model_size)
+        self.fc_mu = nn.Linear(args.model_size, np.prod(action_space.shape))
         # action rescaling
         self.register_buffer(
             "action_scale", torch.tensor((action_space.high - action_space.low) / 2.0, dtype=torch.float32)
