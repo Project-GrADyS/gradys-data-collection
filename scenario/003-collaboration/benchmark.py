@@ -14,9 +14,13 @@ class Args:
 
 # Write the commands above in array form
 experiments = [
-    ["python", "main.py", "--num-drones=2", "--num-sensors=8 ", "--run-name=long_more_info", f"--exp-name=2-drones-8-sensors", "--state_num_closest_sensors=8", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=20000000"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=12", "--run-name=solution", f"--exp-name=2-heuristics", "--state_num_closest_sensors=12", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", "--use-heuristics"],
+    ["python", "main.py", "--num-drones=2", "--num-sensors=12", "--run-name=solution", f"--exp-name=2-learning", "--state_num_closest_sensors=12", "--state-num-closest-drones=1", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", ],
+    ["python", "main.py", "--num-drones=4", "--num-sensors=12", "--run-name=solution", f"--exp-name=4-heuristics", "--state_num_closest_sensors=12", "--state-num-closest-drones=3", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", "--use-heuristics"],
+    ["python", "main.py", "--num-drones=4", "--num-sensors=12", "--run-name=solution", f"--exp-name=4-learning", "--state_num_closest_sensors=12", "--state-num-closest-drones=3", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", ],
+    ["python", "main.py", "--num-drones=6", "--num-sensors=12", "--run-name=solution", f"--exp-name=6-heuristics", "--state_num_closest_sensors=12", "--state-num-closest-drones=5", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", "--use-heuristics"],
+    ["python", "main.py", "--num-drones=6", "--num-sensors=12", "--run-name=solution", f"--exp-name=6-learning", "--state_num_closest_sensors=12", "--state-num-closest-drones=5", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", ],
 ]
-
 
 print("Total experiments: ", len(experiments))
 
