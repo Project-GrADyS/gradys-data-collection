@@ -6,7 +6,7 @@ from typing import List, Optional, Literal
 import gymnasium
 import numpy as np
 from gradysim.protocol.interface import IProtocol
-from gradysim.protocol.messages.communication import BroadcastMessageCommand
+from gradysim.protocol.messages.communication import SendMessageCommand
 from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand
 from gradysim.protocol.messages.telemetry import Telemetry
 from gradysim.simulator.event import EventLoop
@@ -51,67 +51,71 @@ def create_sensor(priority: float):
     return SensorProtocol
 
 
-class DroneProtocol(IProtocol):
-    current_position: tuple[float, float, float]
+def create_drone_protocol(sensor_ids, algorithm_interval):
+    class DroneProtocol(IProtocol):
+        current_position: tuple[float, float, float]
 
-    def act(self, action, coordinate_limit: float) -> None:
-        self.provider.tracked_variables['current_action'] = action.tolist()
+        def act(self, action, coordinate_limit: float) -> None:
+            self.provider.tracked_variables['current_action'] = action.tolist()
 
-        direction: float = action[0] * 2 * np.pi
+            direction: float = action[0] * 2 * np.pi
 
-        unit_vector = [np.cos(direction), np.sin(direction)]
+            unit_vector = [np.cos(direction), np.sin(direction)]
 
-        distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
-        distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
+            distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
+            distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
 
-        # Maintain direction but bound destination within scenario
-        if distance_to_x_edge > 0 and distance_to_y_edge > 0:
-            scale_x = distance_to_x_edge / abs(unit_vector[0])
-            scale_y = distance_to_y_edge / abs(unit_vector[1])
-            scale = min(scale_x, scale_y)
+            # Maintain direction but bound destination within scenario
+            if distance_to_x_edge > 0 and distance_to_y_edge > 0:
+                scale_x = distance_to_x_edge / abs(unit_vector[0])
+                scale_y = distance_to_y_edge / abs(unit_vector[1])
+                scale = min(scale_x, scale_y)
 
-            destination = [
-                self.current_position[0] + unit_vector[0] * scale,
-                self.current_position[1] + unit_vector[1] * scale,
-                0
-            ]
+                destination = [
+                    self.current_position[0] + unit_vector[0] * scale,
+                    self.current_position[1] + unit_vector[1] * scale,
+                    0
+                ]
 
-        # If the drone is at the edge of the scenario, prevent it from leaving
-        else:
-            destination = [
-                self.current_position[0] + unit_vector[0] * 1e5,
-                self.current_position[1] + unit_vector[1] * 1e5,
-                0
-            ]
-            # Bound destination within scenario
-            destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
-            destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
+            # If the drone is at the edge of the scenario, prevent it from leaving
+            else:
+                destination = [
+                    self.current_position[0] + unit_vector[0] * 1e5,
+                    self.current_position[1] + unit_vector[1] * 1e5,
+                    0
+                ]
+                # Bound destination within scenario
+                destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
+                destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
 
-        # Start travelling in the direction of travel
-        command = GotoCoordsMobilityCommand(*destination)
-        self.provider.send_mobility_command(command)
+            # Start travelling in the direction of travel
+            command = GotoCoordsMobilityCommand(*destination)
+            self.provider.send_mobility_command(command)
 
-    def initialize(self) -> None:
-        self.current_position = (0, 0, 0)
-        self._collect_packets()
+        def initialize(self) -> None:
+            self.current_position = (0, 0, 0)
+            self._collect_packets()
 
-    def handle_timer(self, timer: str) -> None:
-        self._collect_packets()
+        def handle_timer(self, timer: str) -> None:
+            self._collect_packets()
 
-    def handle_packet(self, message: str) -> None:
-        pass
+        def handle_packet(self, message: str) -> None:
+            pass
 
-    def handle_telemetry(self, telemetry: Telemetry) -> None:
-        self.current_position = telemetry.current_position
+        def handle_telemetry(self, telemetry: Telemetry) -> None:
+            self.current_position = telemetry.current_position
 
-    def _collect_packets(self) -> None:
-        command = BroadcastMessageCommand("")
-        self.provider.send_communication_command(command)
+        def _collect_packets(self) -> None:
+            for sensor_id in sensor_ids:
+                command = SendMessageCommand("", sensor_id)
+                self.provider.send_communication_command(command)
 
-        self.provider.schedule_timer("", self.provider.current_time() + 0.2)
+            self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval / 2)
 
-    def finish(self) -> None:
-        pass
+        def finish(self) -> None:
+            pass
+
+    return DroneProtocol
 
 
 class GrADySEnvironment(ParallelEnv):
@@ -307,40 +311,44 @@ class GrADySEnvironment(ParallelEnv):
         return state
 
     def observe_simulation_relative_positions(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
+        sensor_nodes = np.array([self.simulator.get_node(sensor_id).position[:2] for sensor_id in self.sensor_node_ids])
+        unvisited_sensor_mask = np.array(
+            [not self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected for sensor_id in
+             self.sensor_node_ids])
+        unvisited_sensor_nodes = sensor_nodes[unvisited_sensor_mask]
 
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
+        agent_nodes = np.array([self.simulator.get_node(agent_id).position[:2] for agent_id in self.agent_node_ids])
 
         state = {}
         for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
+            agent_position = agent_nodes[agent_index]
 
+            # Calculate distances to all unvisited sensors and sort them
+            sensor_distances = np.linalg.norm(unvisited_sensor_nodes - agent_position, axis=1)
+            sorted_sensor_indices = np.argsort(sensor_distances)
+
+            # Select the closest sensors
             closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
+            closest_unvisited_sensors[:len(sorted_sensor_indices)] = unvisited_sensor_nodes[sorted_sensor_indices[:self.state_num_closest_sensors]]
 
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes, key=lambda sensor_node: squared_distance(sensor_node.position, agent_position))
+            # Calculate distances to all other agents and sort them
+            agent_distances = np.linalg.norm(agent_nodes - agent_position, axis=1)
+            sorted_agent_indices = np.argsort(agent_distances)
 
-            agent_position_array = np.array(agent_position[:2])
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                closest_unvisited_sensors[i] = agent_position_array - sensor_node.position[:2]
-
+            # Select the closest agents (excluding the agent itself)
             closest_agents = np.zeros((self.state_num_closest_drones, 2))
+            closest_agents[:len(sorted_agent_indices) - 1] = agent_nodes[sorted_agent_indices[1:self.state_num_closest_drones + 1]]
 
-            sorted_agents = sorted(agent_nodes, key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                closest_agents[i] = agent_position_array - agent_node.position[:2]
-
+            # Normalize the positions
+            closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(sorted_agent_indices)]) / self.scenario_size
+            closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(sorted_sensor_indices)]) / self.scenario_size
 
             state[f"drone{agent_index}"] = np.concatenate([
-                closest_agents.flatten() / self.scenario_size,
-                closest_unvisited_sensors.flatten() / self.scenario_size,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
+                closest_agents.flatten(),
+                closest_unvisited_sensors.flatten(),
+                np.array([agent_index / self.num_drones]) if self.id_on_state else []
             ])
         return state
-
 
     def observe_simulation_absolute_positions(self):
         sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
@@ -438,7 +446,7 @@ class GrADySEnvironment(ParallelEnv):
             transmission_range=self.communication_range
         )))
         builder.add_handler(MobilityHandler(MobilityConfiguration(
-            update_rate=self.algorithm_iteration_interval / 3
+            update_rate=self.algorithm_iteration_interval / 2
         )))
         builder.add_handler(TimerHandler())
 
@@ -488,14 +496,16 @@ class GrADySEnvironment(ParallelEnv):
 
         self.agent_node_ids = []
         for i in range(self.num_drones):
+            drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval)
+
             if self.full_random_drone_position:
-                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                self.agent_node_ids.append(builder.add_node(drone_protocol, (
                     random.uniform(-self.scenario_size, self.scenario_size),
                     random.uniform(-self.scenario_size, self.scenario_size),
                     0
                 )))
             else:
-                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                self.agent_node_ids.append(builder.add_node(drone_protocol, (
                     random.uniform(-2, 2),
                     random.uniform(-2, 2),
                     0
