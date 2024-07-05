@@ -45,6 +45,8 @@ class Args:
     """the frequency of checkpoints"""
     checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""
+    statistics_frequency: float = 10_000
+    """statistics will be saved to the tensorboard logs with this frequency"""
     upload_model: bool = False
     """whether to upload the saved model to huggingface"""
     hf_entity: str = ""
@@ -214,6 +216,10 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     episode_count = 0
     all_collected_count = 0
     all_avg_collection_times = 0
+    all_avg_reward = 0
+    all_max_reward = 0
+    all_sum_reward = 0
+    all_episode_duration = 0
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -405,44 +411,12 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
             info = infos[env.agents[0]]
 
-            avg_reward = info["avg_reward"]
-            max_reward = info["max_reward"]
-            sum_reward = info["sum_reward"]
-
-            avg_collection_time = info["avg_collection_time"]
-
-            writer.add_scalar(
-                "charts/avg_reward",
-                avg_reward,
-                global_step,
-            )
-            writer.add_scalar(
-                "charts/max_reward",
-                max_reward,
-                global_step,
-            )
-            writer.add_scalar(
-                "charts/sum_reward",
-                sum_reward,
-                global_step,
-            )
-            writer.add_scalar(
-                "charts/episode_duration",
-                info["episode_duration"],
-                global_step,
-            )
-            all_avg_collection_times += avg_collection_time
-            writer.add_scalar(
-                "charts/avg_collection_time",
-                all_avg_collection_times / episode_count,
-                global_step,
-            )
+            all_avg_reward += info["avg_reward"]
+            all_max_reward += info["max_reward"]
+            all_sum_reward += info["sum_reward"]
+            all_episode_duration += info["episode_duration"]
+            all_avg_collection_times += info["avg_collection_time"]
             all_collected_count += info["all_collected"]
-            writer.add_scalar(
-                "charts/all_collected_rate",
-                all_collected_count / episode_count,
-                global_step,
-            )
 
         if args.use_heuristics:
             obs = next_obs
@@ -547,13 +521,45 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                         target_param.data.lerp_(param.data, args.tau)
 
-        if global_step % 100 == 0:
+        if global_step % args.statistics_frequency == 0:
             if not args.use_heuristics:
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
             writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
             writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
+
+            writer.add_scalar(
+                "charts/avg_reward",
+                all_avg_reward / episode_count,
+                global_step,
+            )
+            writer.add_scalar(
+                "charts/max_reward",
+                all_max_reward / episode_count,
+                global_step,
+            )
+            writer.add_scalar(
+                "charts/sum_reward",
+                all_sum_reward / episode_count,
+                global_step,
+            )
+            writer.add_scalar(
+                "charts/episode_duration",
+                all_episode_duration / episode_count,
+                global_step,
+            )
+            writer.add_scalar(
+                "charts/avg_collection_time",
+                all_avg_collection_times / episode_count,
+                global_step,
+            )
+            writer.add_scalar(
+                "charts/all_collected_rate",
+                all_collected_count / episode_count,
+                global_step,
+            )
+
             print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
