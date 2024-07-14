@@ -100,6 +100,8 @@ class Args:
     max_sensor_priority: float = 1.0
     full_random_drone_position: bool = True
 
+    punish_reward: bool = False
+
     critic_model_size: int = 512
     actor_model_size: int = 256
 
@@ -123,7 +125,8 @@ def make_env(render_mode=None):
         id_on_state=args.id_on_state,
         min_sensor_priority=args.min_sensor_priority,
         max_sensor_priority=args.max_sensor_priority,
-        full_random_drone_position=args.full_random_drone_position
+        full_random_drone_position=args.full_random_drone_position,
+        punish_reward=args.punish_reward
     )
 
 
@@ -521,7 +524,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                         target_param.data.lerp_(param.data, args.tau)
 
-        if global_step % args.statistics_frequency == 0:
+        if global_step > 0 and global_step % args.statistics_frequency == 0:
             if not args.use_heuristics:
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)

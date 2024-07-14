@@ -152,7 +152,8 @@ class GrADySEnvironment(ParallelEnv):
                  id_on_state: bool = True,
                  min_sensor_priority: float = 0.1,
                  max_sensor_priority: float = 1,
-                 full_random_drone_position: bool = True):
+                 full_random_drone_position: bool = True,
+                 punish_reward: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -182,6 +183,7 @@ class GrADySEnvironment(ParallelEnv):
         self.min_sensor_priority = min_sensor_priority
         self.max_sensor_priority = max_sensor_priority
         self.full_random_drone_position = full_random_drone_position
+        self.punish_reward = punish_reward
 
     def observation_space(self, agent):
         agent_id = 1 if self.id_on_state else 0
@@ -592,12 +594,16 @@ class GrADySEnvironment(ParallelEnv):
 
         # Calculating reward
         reward = 0
+        if self.punish_reward:
+            reward = -(self.num_sensors - sum(sensor_is_collected)) / self.num_sensors
         current_timestamp = self.episode_duration * self.algorithm_iteration_interval
         for index, sensor_id in enumerate(self.sensor_node_ids):
             if sensor_is_collected[index] and self.collection_times[index] == self.max_episode_length:
                 self.collection_times[index] = current_timestamp
-                priority = self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.priority
-                reward += priority * (1 - current_timestamp / self.max_episode_length)
+                if not self.punish_reward:
+                    priority = self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.priority
+                    reward += priority * (1 - current_timestamp / self.max_episode_length)
+
 
 
         rewards = {
