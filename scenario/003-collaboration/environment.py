@@ -595,7 +595,12 @@ class GrADySEnvironment(ParallelEnv):
         # Calculating reward
         reward = 0
         if self.punish_reward:
-            reward = -(self.num_sensors - sum(sensor_is_collected)) / self.num_sensors
+            before = sum(sensor_is_collected_before)
+            after = sum(sensor_is_collected)
+            if after > before:
+                reward = (after - before) * 10
+            else:
+                reward = -(self.num_sensors - sum(sensor_is_collected)) / self.num_sensors
         current_timestamp = self.episode_duration * self.algorithm_iteration_interval
         for index, sensor_id in enumerate(self.sensor_node_ids):
             if sensor_is_collected[index] and self.collection_times[index] == self.max_episode_length:
