@@ -16,7 +16,7 @@ from stable_baselines3.common.buffers import ReplayBuffer
 from torch.utils.tensorboard import SummaryWriter
 
 from environment import GrADySEnvironment, StateMode
-from heuristics import create_greedy_heuristics
+from heuristics import create_greedy_heuristics, create_random_heuristics
 
 
 @dataclass
@@ -105,7 +105,7 @@ class Args:
     critic_model_size: int = 512
     actor_model_size: int = 256
 
-    use_heuristics: bool = False
+    use_heuristics: None | Literal['greedy', 'random'] = None
 
 args = tyro.cli(Args)
 
@@ -182,8 +182,10 @@ class Actor(nn.Module):
         x = torch.tanh(self.fc_mu(x))
         return x * self.action_scale + self.action_bias
 
-
-heuristics = create_greedy_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
+if args.use_heuristics == 'greedy':
+    heuristics = create_greedy_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
+if args.use_heuristics == 'random':
+    heuristics = create_random_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
 
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
