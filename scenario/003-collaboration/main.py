@@ -18,6 +18,8 @@ from torch.utils.tensorboard import SummaryWriter
 from environment import GrADySEnvironment, StateMode
 from heuristics import create_greedy_heuristics, create_random_heuristics
 
+import line_profiler
+
 
 @dataclass
 class Args:
@@ -89,8 +91,6 @@ class Args:
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
 
-    centralized_critic: bool = True
-
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     num_drones: int = 2
@@ -98,7 +98,7 @@ class Args:
     scenario_size: float = 100
     min_sensor_priority: float = 0.1
     max_sensor_priority: float = 1.0
-    full_random_drone_position: bool = True
+    full_random_drone_position: bool = False
 
     punish_reward: bool = False
 
@@ -110,10 +110,10 @@ class Args:
 args = tyro.cli(Args)
 
 
-def make_env(render_mode=None):
+def make_env( evaluation=False):
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
-        render_mode=render_mode,
+        render_mode="visual" if evaluation and args.checkpoint_visual_evaluation else None,
         num_drones=args.num_drones,
         num_sensors=args.num_sensors,
         max_episode_length=args.max_episode_length,
@@ -125,42 +125,26 @@ def make_env(render_mode=None):
         id_on_state=args.id_on_state,
         min_sensor_priority=args.min_sensor_priority,
         max_sensor_priority=args.max_sensor_priority,
-        full_random_drone_position=args.full_random_drone_position,
+        full_random_drone_position=False if evaluation else args.full_random_drone_position,
         punish_reward=args.punish_reward
     )
 
 
 # ALGO LOGIC: initialize agent here:
-if args.centralized_critic:
-    class Critic(nn.Module):
-        def __init__(self, action_space, observation_space):
-            super().__init__()
-            self.fc1 = nn.Linear(
-                np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, args.critic_model_size)
-            self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
-            self.fc3 = nn.Linear(args.critic_model_size, 1)
+class Critic(nn.Module):
+    def __init__(self, action_space, observation_space):
+        super().__init__()
+        self.fc1 = nn.Linear(
+            np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, args.critic_model_size)
+        self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
+        self.fc3 = nn.Linear(args.critic_model_size, 1)
 
-        def forward(self, x, a):
-            x = torch.cat([x, a], 1)
-            x = F.relu(self.fc1(x))
-            x = F.relu(self.fc2(x))
-            x = self.fc3(x)
-            return x
-else:
-    class Critic(nn.Module):
-        def __init__(self, action_space, observation_space):
-            super().__init__()
-            self.fc1 = nn.Linear(
-                np.array(observation_space.shape).prod() + np.prod(action_space.shape), args.critic_model_size)
-            self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
-            self.fc3 = nn.Linear(args.critic_model_size, 1)
-
-        def forward(self, x, a):
-            x = torch.cat([x, a], 1)
-            x = F.relu(self.fc1(x))
-            x = F.relu(self.fc2(x))
-            x = self.fc3(x)
-            return x
+    def forward(self, x, a):
+        x = torch.cat([x, a], 1)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
 
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
@@ -190,28 +174,8 @@ if args.use_heuristics == 'random':
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
 
+@line_profiler.profile
 def main():
-    import stable_baselines3 as sb3
-
-    if sb3.__version__ < "2.0":
-        raise ValueError(
-            """Ongoing migration: run the following command to install the new dependencies:
-poetry run pip install "stable_baselines3==2.0.0a1"
-"""
-        )
-
-    if args.track:
-        import wandb
-
-        wandb.init(
-            project=args.wandb_project_name,
-            entity=args.wandb_entity,
-            sync_tensorboard=True,
-            config=vars(args),
-            name=run_name,
-            monitor_gym=True,
-            save_code=True,
-        )
     writer.add_text(
         "hyperparameters",
         "|param|value|\n|-|-|\n%s" % ("\n".join([f"|{key}|{value}|" for key, value in vars(args).items()])),
@@ -251,35 +215,26 @@ poetry run pip install "stable_baselines3==2.0.0a1"
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate)
 
-    if args.centralized_critic:
-        extended_observation_space = gym.spaces.Box(
-            low=0,
-            high=1,
-            dtype=np.float32,
-            shape=(args.num_drones, *observation_space.shape),
-        )
-        extended_action_space = gym.spaces.Box(
-            low=action_space.low[0],
-            high=action_space.high[0],
-            dtype=np.float32,
-            shape=(args.num_drones, *action_space.shape),
-        )
-        rb = ReplayBuffer(
-            args.buffer_size,
-            extended_observation_space,
-            extended_action_space,
-            device,
-            handle_timeout_termination=False,
-        )
-    else:
-        rb = ReplayBuffer(
-            args.buffer_size,
-            observation_space,
-            action_space,
-            device,
-            handle_timeout_termination=False,
-        )
-
+    extended_observation_space = gym.spaces.Box(
+        low=0,
+        high=1,
+        dtype=np.float32,
+        shape=(args.num_drones, *observation_space.shape),
+    )
+    extended_action_space = gym.spaces.Box(
+        low=action_space.low[0],
+        high=action_space.high[0],
+        dtype=np.float32,
+        shape=(args.num_drones, *action_space.shape),
+    )
+    rb = ReplayBuffer(
+        args.buffer_size,
+        extended_observation_space,
+        extended_action_space,
+        device,
+        handle_timeout_termination=False,
+    )
+   
     start_time = time.time()
 
     def evaluate_checkpoint():
@@ -288,7 +243,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
 
-        temp_env = make_env("visual" if args.checkpoint_visual_evaluation else None)
+        temp_env = make_env(True)
 
         actor.eval()
         target_actor.eval()
@@ -302,7 +257,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         sum_avg_collection_time = 0
         sum_all_collected = 0
 
-        evaluation_runs = 500
+        evaluation_runs = 200
         for i in range(evaluation_runs):
             if i % 100 == 0:
                 print(f"Evaluating model ({i+1}/{evaluation_runs})")
@@ -425,7 +380,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
 
         if args.use_heuristics:
             obs = next_obs
-        elif args.centralized_critic:
+        else:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
             all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
             all_agent_obs = np.stack([obs[agent] for agent in env.agents])
@@ -479,52 +434,6 @@ poetry run pip install "stable_baselines3==2.0.0a1"
                     target_param.data.lerp_(param.data, args.tau)
                 for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
                     target_param.data.lerp_(param.data, args.tau)
-        else:
-            real_next_obs = next_obs.copy()
-
-            for agent in env.agents:
-                rb.add(obs[agent],
-                       real_next_obs[agent],
-                       actions[agent],
-                       np.array([rewards[agent]]),
-                       np.array([terminations[agent]]),
-                       [infos.get(agent, {})])
-
-            # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
-            obs = next_obs
-
-            # ALGO LOGIC: training.
-            if global_step <= args.learning_starts:
-                continue
-
-            training_step_count = args.num_drones if args.train_once_for_each_agent else 1
-            for _ in range(training_step_count):
-                data = rb.sample(args.batch_size)
-                with torch.no_grad():
-                    next_state_actions = target_actor(data.next_observations)
-                    qf1_next_target = qf1_target(data.next_observations, next_state_actions)
-                    next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * args.gamma * (
-                        qf1_next_target).view(-1)
-
-                qf1_a_values = qf1(data.observations, data.actions).view(-1)
-                qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
-
-                # optimize the model
-                q_optimizer.zero_grad()
-                qf1_loss.backward()
-                q_optimizer.step()
-
-                if global_step % args.policy_frequency == 0:
-                    actor_loss = -qf1(data.observations, actor(data.observations)).mean()
-                    actor_optimizer.zero_grad()
-                    actor_loss.backward()
-                    actor_optimizer.step()
-
-                    # update the target network
-                    for param, target_param in zip(actor.parameters(), target_actor.parameters()):
-                        target_param.data.lerp_(param.data, args.tau)
-                    for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                        target_param.data.lerp_(param.data, args.tau)
 
         if global_step > 0 and global_step % args.statistics_frequency == 0:
             if not args.use_heuristics:
@@ -570,7 +479,7 @@ poetry run pip install "stable_baselines3==2.0.0a1"
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
             evaluate_checkpoint()
 
-    evaluate_checkpoint()
+    # evaluate_checkpoint()
     env.close()
     writer.close()
 
