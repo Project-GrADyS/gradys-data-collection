@@ -100,7 +100,7 @@ class Args:
     max_sensor_priority: float = 1.0
     full_random_drone_position: bool = True
 
-    punish_reward: bool = False
+    reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward'
 
     critic_model_size: int = 512
     actor_model_size: int = 256
@@ -126,7 +126,7 @@ def make_env(render_mode=None):
         min_sensor_priority=args.min_sensor_priority,
         max_sensor_priority=args.max_sensor_priority,
         full_random_drone_position=args.full_random_drone_position,
-        punish_reward=args.punish_reward
+        reward=args.reward
     )
 
 
