@@ -20,8 +20,8 @@ class Args:
 
 experiments = [
     # ["python", "main.py", "--num-drones=4", "--num-sensors=12", "--run-name=scenario2", f"--exp-name=4-drone-punish-with-reward", "--state_num_closest_sensors=8", "--state-num-closest-drones=3", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", "--punish-reward"],
-    # ["python", "main.py", "--num-drones=6", "--num-sensors=12", "--run-name=scenario2", f"--exp-name=6-drone", "--state_num_closest_sensors=8", "--state-num-closest-drones=5", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000"],
-    ["python", "main.py", "--num-drones=6", "--num-sensors=12", "--run-name=bench", f"--exp-name=6-drone", "--state_num_closest_sensors=8", "--state-num-closest-drones=5", "--min-sensor-priority=1", "--total-timesteps=50000", "--checkpoint-freq=100000"],
+    ["python", "main.py", "--num-drones=6", "--num-sensors=12", "--run-name=new-action", f"--exp-name=6-drone", "--state_num_closest_sensors=8", "--state-num-closest-drones=5", "--min-sensor-priority=1", "--total-timesteps=50000000", "--checkpoint-freq=100000", "--algorithm-iteration-interval=2"],
+    # ["python", "main.py", "--num-drones=6", "--num-sensors=12", "--run-name=bench", f"--exp-name=6-drone", "--state_num_closest_sensors=8", "--state-num-closest-drones=5", "--min-sensor-priority=1", "--total-timesteps=50000", "--checkpoint-freq=100000", "--no-train-once-for-each-agent"],
 ]
 
 print("Total experiments: ", len(experiments))
