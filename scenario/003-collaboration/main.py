@@ -341,16 +341,18 @@ def main():
             actions = {
                 agent: heuristics(obs[agent]) for agent in env.agents
             }
+            all_agent_actions = np.stack([actions[agent] for agent in env.agents])
         else:
             # ALGO LOGIC: put action logic here
             if global_step < args.learning_starts:
                 actions = {
                     agent: action_space.sample() for agent in env.agents
                 }
+                all_agent_actions = np.stack([actions[agent] for agent in env.agents])
             else:
                 with torch.no_grad():
                     actions = {}
-                    all_obs = torch.tensor(np.array([obs[agent] for agent in env.agents]),
+                    all_obs = torch.tensor(all_agent_obs,
                                            device=device,
                                            dtype=torch.float32)
                     all_actions: torch.Tensor = actor(all_obs)
@@ -358,6 +360,7 @@ def main():
                                                   actor.action_scale * args.exploration_noise))
                     all_actions.clip_(torch.tensor(action_space.low, device=device),
                                       torch.tensor(action_space.high, device=device))
+                    all_agent_actions = all_actions.cpu().numpy()
                     for index, agent in enumerate(env.agents):
                         actions[agent] = all_actions[index].cpu().numpy()
 
@@ -380,11 +383,10 @@ def main():
 
         if args.use_heuristics:
             obs = next_obs
+            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
         else:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
             all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
-            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
-            all_agent_actions = np.stack([actions[agent] for agent in env.agents])
             rb.add(
                 all_agent_obs,
                 all_agent_next_obs,
@@ -396,6 +398,7 @@ def main():
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
+            all_agent_obs = all_agent_next_obs
 
             # ALGO LOGIC: training.
             if global_step <= args.learning_starts:
