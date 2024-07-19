@@ -6,8 +6,8 @@ from typing import List, Optional, Literal
 import gymnasium
 import numpy as np
 from gradysim.protocol.interface import IProtocol
-from gradysim.protocol.messages.communication import SendMessageCommand
-from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand
+from gradysim.protocol.messages.communication import BroadcastMessageCommand
+from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand, SetSpeedMobilityCommand
 from gradysim.protocol.messages.telemetry import Telemetry
 from gradysim.simulator.event import EventLoop
 from gradysim.simulator.handler.communication import CommunicationHandler, CommunicationMedium
@@ -59,6 +59,7 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
             self.provider.tracked_variables['current_action'] = action.tolist()
 
             direction: float = action[0] * 2 * np.pi
+            speed: float = action[1] * 15
 
             unit_vector = [np.cos(direction), np.sin(direction)]
 
@@ -92,6 +93,11 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
             command = GotoCoordsMobilityCommand(*destination)
             self.provider.send_mobility_command(command)
 
+            command = SetSpeedMobilityCommand(speed)
+            self.provider.send_mobility_command(command)
+
+            self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval - 0.1)
+
         def initialize(self) -> None:
             self.current_position = (0, 0, 0)
             self._collect_packets()
@@ -106,11 +112,8 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
             self.current_position = telemetry.current_position
 
         def _collect_packets(self) -> None:
-            for sensor_id in sensor_ids:
-                command = SendMessageCommand("", sensor_id)
-                self.provider.send_communication_command(command)
-
-            self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval / 2)
+            command = BroadcastMessageCommand("")
+            self.provider.send_communication_command(command)
 
         def finish(self) -> None:
             pass
@@ -214,7 +217,7 @@ class GrADySEnvironment(ParallelEnv):
 
     def action_space(self, agent):
         # Drone can move in any direction
-        return Box(0, 1, shape=(1,))
+        return Box(0, 1, shape=(2,))
 
     def render(self):
         """
