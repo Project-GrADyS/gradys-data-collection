@@ -261,20 +261,20 @@ def main():
         for i in range(evaluation_runs):
             if i % 100 == 0:
                 print(f"Evaluating model ({i+1}/{evaluation_runs})")
-            obs, _ = temp_env.reset(seed=args.seed)
+            temp_obs, _ = temp_env.reset(seed=args.seed)
             while True:
                 actions = {}
                 with torch.no_grad():
                     for agent in temp_env.agents:
                         if args.use_heuristics:
-                            actions[agent] = heuristics(obs[agent])
+                            actions[agent] = heuristics(temp_obs[agent])
                         else:
-                            actions[agent] = actor(torch.Tensor(obs[agent]).to(device))
+                            actions[agent] = actor(torch.Tensor(temp_obs[agent]).to(device))
                             actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
                             actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
 
                 next_obs, _, _, _, infos = temp_env.step(actions)
-                obs = next_obs
+                temp_obs = next_obs
 
                 if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
                     info = infos[env.agents[0]]
