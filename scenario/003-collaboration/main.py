@@ -18,8 +18,6 @@ from torch.utils.tensorboard import SummaryWriter
 from environment import GrADySEnvironment, StateMode
 from heuristics import create_greedy_heuristics, create_random_heuristics
 
-import line_profiler
-
 
 @dataclass
 class Args:
@@ -174,7 +172,6 @@ if args.use_heuristics == 'random':
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
 
-@line_profiler.profile
 def main():
     writer.add_text(
         "hyperparameters",
@@ -269,7 +266,7 @@ def main():
                         if args.use_heuristics:
                             actions[agent] = heuristics(temp_obs[agent])
                         else:
-                            actions[agent] = actor(torch.Tensor(temp_obs[agent]).to(device))
+                            actions[agent] = actor(torch.tensor(temp_obs[agent], device=device, dtype=torch.float32))
                             actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
                             actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
 
@@ -329,6 +326,7 @@ def main():
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = env.reset(seed=args.seed)
+    all_agent_obs = np.stack([obs[agent] for agent in env.agents])
     terminated = False
     for global_step in range(args.total_timesteps):
         step_start = time.time()
