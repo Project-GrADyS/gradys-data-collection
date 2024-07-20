@@ -59,7 +59,12 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
             self.provider.tracked_variables['current_action'] = action.tolist()
 
             direction: float = action[0] * 2 * np.pi
-            speed: float = action[1] * 15
+            
+            if len(action) > 1:
+                speed: float = action[1] * 15
+                command = SetSpeedMobilityCommand(speed)
+                self.provider.send_mobility_command(command)
+
 
             unit_vector = [np.cos(direction), np.sin(direction)]
 
@@ -91,9 +96,6 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
 
             # Start travelling in the direction of travel
             command = GotoCoordsMobilityCommand(*destination)
-            self.provider.send_mobility_command(command)
-
-            command = SetSpeedMobilityCommand(speed)
             self.provider.send_mobility_command(command)
 
             self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval - 0.1)
@@ -156,7 +158,8 @@ class GrADySEnvironment(ParallelEnv):
                  min_sensor_priority: float = 0.1,
                  max_sensor_priority: float = 1,
                  full_random_drone_position: bool = True,
-                 reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward'):
+                 reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward',
+                 speed_action: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -187,6 +190,7 @@ class GrADySEnvironment(ParallelEnv):
         self.max_sensor_priority = max_sensor_priority
         self.full_random_drone_position = full_random_drone_position
         self.reward = reward
+        self.speed_action = speed_action
 
     def observation_space(self, agent):
         agent_id = 1 if self.id_on_state else 0
@@ -217,7 +221,10 @@ class GrADySEnvironment(ParallelEnv):
 
     def action_space(self, agent):
         # Drone can move in any direction
-        return Box(0, 1, shape=(2,))
+        if self.speed_action:
+            return Box(0, 1, shape=(2,))
+        else:
+            return Box(0, 1, shape=(1,))
 
     def render(self):
         """
