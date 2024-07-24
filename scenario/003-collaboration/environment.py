@@ -51,7 +51,7 @@ def create_sensor(priority: float):
     return SensorProtocol
 
 
-def create_drone_protocol(sensor_ids, algorithm_interval):
+def create_drone_protocol(sensor_ids, algorithm_interval, speed_action: bool):
     class DroneProtocol(IProtocol):
         current_position: tuple[float, float, float]
 
@@ -60,7 +60,7 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
 
             direction: float = action[0] * 2 * np.pi
             
-            if len(action) > 1:
+            if speed_action:
                 speed: float = action[1] * 15
                 command = SetSpeedMobilityCommand(speed)
                 self.provider.send_mobility_command(command)
@@ -98,7 +98,10 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
             command = GotoCoordsMobilityCommand(*destination)
             self.provider.send_mobility_command(command)
 
-            self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval - 0.1)
+            if speed_action:
+                self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval - 0.1)
+            else:
+                self.provider.schedule_timer("", self.provider.current_time() + 0.1)
 
         def initialize(self) -> None:
             self.current_position = (0, 0, 0)
@@ -106,6 +109,8 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
 
         def handle_timer(self, timer: str) -> None:
             self._collect_packets()
+            if not speed_action:
+                self.provider.schedule_timer("", self.provider.current_time() + 0.1)
 
         def handle_packet(self, message: str) -> None:
             pass
@@ -116,6 +121,7 @@ def create_drone_protocol(sensor_ids, algorithm_interval):
         def _collect_packets(self) -> None:
             command = BroadcastMessageCommand("")
             self.provider.send_communication_command(command)
+
 
         def finish(self) -> None:
             pass
@@ -508,7 +514,7 @@ class GrADySEnvironment(ParallelEnv):
 
         self.agent_node_ids = []
         for i in range(self.num_drones):
-            drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval)
+            drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval, self.speed_action)
 
             if self.full_random_drone_position:
                 self.agent_node_ids.append(builder.add_node(drone_protocol, (
