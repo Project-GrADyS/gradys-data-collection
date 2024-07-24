@@ -210,7 +210,7 @@ class GrADySEnvironment(ParallelEnv):
             agent_positions = self.state_num_closest_drones * 2
             sensor_positions = self.state_num_closest_sensors * 2
 
-            return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
+            return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_id,))
         elif self.state_mode == "angle":
             agent_positions = self.state_num_closest_drones * 1
             sensor_positions = self.state_num_closest_sensors * 1
@@ -347,6 +347,7 @@ class GrADySEnvironment(ParallelEnv):
 
             # Select the closest sensors
             closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
+            closest_unvisited_sensors.fill(-1)
             closest_unvisited_sensors[:len(sorted_sensor_indices)] = unvisited_sensor_nodes[sorted_sensor_indices[:self.state_num_closest_sensors]]
 
             # Calculate distances to all other agents and sort them
@@ -355,11 +356,12 @@ class GrADySEnvironment(ParallelEnv):
 
             # Select the closest agents (excluding the agent itself)
             closest_agents = np.zeros((self.state_num_closest_drones, 2))
+            closest_agents.fill(-1)
             closest_agents[:len(sorted_agent_indices) - 1] = agent_nodes[sorted_agent_indices[1:self.state_num_closest_drones + 1]]
 
             # Normalize the positions
-            closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(sorted_agent_indices)]) / self.scenario_size
-            closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(sorted_sensor_indices)]) / self.scenario_size
+            closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(sorted_agent_indices)] + self.scenario_size) / (self.scenario_size * 2)
+            closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(sorted_sensor_indices)] + self.scenario_size) / (self.scenario_size * 2)
 
             state[f"drone{agent_index}"] = np.concatenate([
                 closest_agents.flatten(),
