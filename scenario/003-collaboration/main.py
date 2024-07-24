@@ -483,7 +483,7 @@ def main():
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
             evaluate_checkpoint()
 
-    # evaluate_checkpoint()
+    evaluate_checkpoint()
     env.close()
     writer.close()
 
