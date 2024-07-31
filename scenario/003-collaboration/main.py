@@ -55,8 +55,10 @@ class Args:
     # Algorithm specific arguments
     total_timesteps: int = 1000000
     """total timesteps of the experiments"""
-    learning_rate: float = 3e-6
-    """the learning rate of the optimizer"""
+    actor_learning_rate: float = 3e-6
+    """the learning rate of the actor optimizer"""
+    critic_learning_rate: float = 3e-6
+    """the learning rate of the critic optimizer"""
     buffer_size: int = int(1e6)
     """the replay memory buffer size"""
     gamma: float = 0.99
@@ -100,7 +102,7 @@ class Args:
 
     reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward'
 
-    speed_action: bool = False
+    speed_action: bool = True
 
     critic_model_size: int = 512
     actor_model_size: int = 256
@@ -212,8 +214,8 @@ def main():
     target_actor = Actor(action_space, observation_space).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
-    q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.learning_rate)
-    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.learning_rate)
+    q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.critic_learning_rate)
+    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.actor_learning_rate)
 
     extended_observation_space = gym.spaces.Box(
         low=0,
