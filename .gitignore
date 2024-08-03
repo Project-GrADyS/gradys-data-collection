@@ -1,3 +1,6 @@
 **/venv/**
 **/.idea/**
 **/clearnrl/**
+**/__pycache__/**
+**/.ipynb_checkpoints/**
+**/runs/**
