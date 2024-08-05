@@ -93,6 +93,7 @@ class Args:
 
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
+    end_when_all_collected: bool = False
     num_drones: int = 2
     num_sensors: int = 5
     scenario_size: float = 100
@@ -129,7 +130,8 @@ def make_env( evaluation=False):
         max_sensor_priority=args.max_sensor_priority,
         full_random_drone_position=False if evaluation else args.full_random_drone_position,
         reward=args.reward,
-        speed_action=args.speed_action
+        speed_action=args.speed_action,
+        end_when_all_collected=args.end_when_all_collected
     )
 
 

@@ -165,7 +165,8 @@ class GrADySEnvironment(ParallelEnv):
                  max_sensor_priority: float = 1,
                  full_random_drone_position: bool = True,
                  reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward',
-                 speed_action: bool = False):
+                 speed_action: bool = False,
+                 end_when_all_collected: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -197,6 +198,7 @@ class GrADySEnvironment(ParallelEnv):
         self.full_random_drone_position = full_random_drone_position
         self.reward = reward
         self.speed_action = speed_action
+        self.end_when_all_collected = end_when_all_collected
 
     def observation_space(self, agent):
         agent_id = 1 if self.id_on_state else 0
@@ -603,7 +605,7 @@ class GrADySEnvironment(ParallelEnv):
 
         if self.stall_duration > self.max_seconds_stalled:
             simulation_ongoing = False
-            end_cause = "stalled"
+            end_cause = f"stalled ({sum(sensor_is_collected)}/{self.num_sensors})"
 
         all_sensors_collected = sum(sensor_is_collected) == self.num_sensors
 
@@ -640,7 +642,8 @@ class GrADySEnvironment(ParallelEnv):
         self.reward_sum += rewards[self.agents[0]]
         self.max_reward = max(self.max_reward, *rewards.values())
 
-        terminations = {agent: all_sensors_collected or not simulation_ongoing for agent in self.agents}
+        simulation_ended = (all_sensors_collected and self.end_when_all_collected) or not simulation_ongoing
+        terminations = {agent: simulation_ended  for agent in self.agents}
 
         truncations = {agent: False for agent in self.agents}
 
