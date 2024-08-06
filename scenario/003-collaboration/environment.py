@@ -14,7 +14,7 @@ from gradysim.simulator.handler.communication import CommunicationHandler, Commu
 from gradysim.simulator.handler.interface import INodeHandler
 from gradysim.simulator.handler.mobility import MobilityHandler, MobilityConfiguration
 from gradysim.simulator.handler.timer import TimerHandler
-from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration
+from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration, VisualizationController
 from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
 from gradysim.protocol.position import squared_distance
@@ -131,6 +131,7 @@ def create_drone_protocol(sensor_ids, algorithm_interval, speed_action: bool):
 
 class GrADySEnvironment(ParallelEnv):
     simulator: Simulator
+    controller: VisualizationController
 
     agent_node_ids: List[int]
     sensor_node_ids: List[int]
@@ -534,6 +535,7 @@ class GrADySEnvironment(ParallelEnv):
                 )))
 
         self.simulator = builder.build()
+        self.controller = VisualizationController()
 
         # Running a single simulation step to get the initial observations
         if not self.simulator.step_simulation():
@@ -597,6 +599,13 @@ class GrADySEnvironment(ParallelEnv):
             self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected
             for sensor_id in self.sensor_node_ids
         ]
+
+        if self.render_mode == "visual":
+            collected_sensors = [sensor_id
+                                 for index, sensor_id in enumerate(self.sensor_node_ids)
+                                 if sensor_is_collected[index]]
+            for sensor_id in collected_sensors:
+                self.controller.paint_node(sensor_id, (0, 255, 0))
 
         if sum(sensor_is_collected) > sum(sensor_is_collected_before):
             self.stall_duration = 0
