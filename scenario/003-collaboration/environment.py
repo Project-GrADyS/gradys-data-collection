@@ -535,7 +535,8 @@ class GrADySEnvironment(ParallelEnv):
                 )))
 
         self.simulator = builder.build()
-        self.controller = VisualizationController()
+        if self.render_mode == "visual":
+            self.controller = VisualizationController()
 
         # Running a single simulation step to get the initial observations
         if not self.simulator.step_simulation():
