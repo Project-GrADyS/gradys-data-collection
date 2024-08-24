@@ -164,9 +164,9 @@ class GrADySEnvironment(ParallelEnv):
                  id_on_state: bool = True,
                  min_sensor_priority: float = 0.1,
                  max_sensor_priority: float = 1,
-                 full_random_drone_position: bool = True,
-                 reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward',
-                 speed_action: bool = False,
+                 full_random_drone_position: bool = False,
+                 reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
+                 speed_action: bool = True,
                  end_when_all_collected: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:

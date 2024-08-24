@@ -6,7 +6,7 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 # Loading the model
-model_path = f"runs/long-run__optimized-punish-no-end__1__1722784275/optimized-punish-no-end-checkpoint1800.cleanrl_model"
+model_path = f"runs/results__a_2-s_12__1__1723034080/a_2-s_12-checkpoint2660.cleanrl_model"
 
 print(f"Loading model from {model_path}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -23,13 +23,13 @@ def get_sensor_positions(environment: GrADySEnvironment):
 if __name__ == "__main__":
     env = GrADySEnvironment(
         algorithm_iteration_interval=0.5,
-        num_drones=4,
+        num_drones=2,
         num_sensors=12,
         max_seconds_stalled=30,
         scenario_size=100,
-        render_mode="visual",
+        render_mode=None,
         state_num_closest_sensors=12,
-        state_num_closest_drones=3,
+        state_num_closest_drones=1,
         min_sensor_priority=1,
         full_random_drone_position=False,
         speed_action=True
