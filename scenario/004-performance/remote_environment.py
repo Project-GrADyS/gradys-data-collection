@@ -23,45 +23,44 @@ from gradysim.protocol.position import squared_distance
 
 import numpy as np
 
-import tyro
-
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
 
 
-@dataclass
-class Args:
-    object_name: str
+def parse_args():
+    import argparse
+    parser = argparse.ArgumentParser(description="Process some arguments.")
 
-    render_mode: Optional[Literal["visual", "console"]] = None
-    algorithm_iteration_interval: float = 0.5
-    num_drones: int = 1
-    num_sensors: int = 2
-    scenario_size: float = 100
-    max_episode_length: float = 500
-    max_seconds_stalled: int = 30
-    communication_range: float = 20
-    state_num_closest_sensors: int = 2
-    state_num_closest_drones: int = 2
-    state_mode: StateMode = "relative"
-    id_on_state: bool = True
-    min_sensor_priority: float = 0.1
-    max_sensor_priority: float = 1
-    full_random_drone_position: bool = False
-    reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
-    speed_action: bool = True
-    end_when_all_collected: bool = True
+    parser.add_argument('--object_name', type=str, required=True, help='Name of the object')
+    
+    parser.add_argument('--render_mode', type=str, choices=['visual', 'console'], help='Render mode (visual or console)')
+    parser.add_argument('--algorithm_iteration_interval', type=float, default=0.5, help='Interval for algorithm iteration')
+    parser.add_argument('--num_drones', type=int, default=1, help='Number of drones')
+    parser.add_argument('--num_sensors', type=int, default=2, help='Number of sensors')
+    parser.add_argument('--scenario_size', type=float, default=100, help='Size of the scenario')
+    parser.add_argument('--max_episode_length', type=float, default=500, help='Maximum episode length')
+    parser.add_argument('--max_seconds_stalled', type=int, default=30, help='Maximum seconds stalled')
+    parser.add_argument('--communication_range', type=float, default=20, help='Communication range')
+    parser.add_argument('--state_num_closest_sensors', type=int, default=2, help='Number of closest sensors in the state')
+    parser.add_argument('--state_num_closest_drones', type=int, default=2, help='Number of closest drones in the state')
+    parser.add_argument('--state_mode', type=str, choices=['relative', 'absolute'], default='relative', help='State mode (relative or absolute)')
+    
+    parser.add_argument('--id_on_state', type=bool, default=True, help='ID on state (default: True)')
+    parser.add_argument('--full_random_drone_position', type=bool, default=False, help='Full random drone position (default: False)')
+    parser.add_argument('--speed_action', type=bool, default=True, help='Speed action (default: True)')
+    parser.add_argument('--end_when_all_collected', type=bool, default=True, help='End when all collected (default: True)')
+    
+    parser.add_argument('--min_sensor_priority', type=float, default=0.1, help='Minimum sensor priority')
+    parser.add_argument('--max_sensor_priority', type=float, default=1, help='Maximum sensor priority')
+    parser.add_argument('--reward', type=str, choices=['punish', 'time-reward', 'reward'], default='punish', help='Reward type (punish, time-reward, reward)')
 
+    return parser.parse_args()
 
-
-def create_sensor(priority: float):
+def create_sensor(priority: int):
     class SensorProtocol(IProtocol):
         has_collected: bool
-        priority: float
 
         def initialize(self) -> None:
             self.priority = priority
-            self.provider.tracked_variables["priority"] = priority
-
             self.has_collected = False
             self.provider.tracked_variables["collected"] = self.has_collected
 
@@ -682,7 +681,7 @@ class GradysRemoteEnvironment:
 
 
 if __name__ == "__main__":
-    args = tyro.cli(Args)
+    args = parse_args()
 
     env = GradysRemoteEnvironment(args.render_mode, args.algorithm_iteration_interval, args.num_drones, args.num_sensors, 
                                            args.scenario_size, args.max_episode_length, args.max_seconds_stalled, args.communication_range, 

@@ -91,7 +91,7 @@ class Args:
     state_num_closest_drones: int = 1
     """the number of closest drones to consider in the state"""
 
-    algorithm_iteration_interval: float = 0.5
+    algorithm_iteration_interval: float = 2
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
     num_drones: int = 2
@@ -109,6 +109,7 @@ class Args:
     actor_model_size: int = 256
 
     use_heuristics: None | Literal['greedy', 'random'] = None
+    use_pypy: bool = False
 
 args = tyro.cli(Args)
 
@@ -131,7 +132,8 @@ def make_env( evaluation=False):
         full_random_drone_position=False if evaluation else args.full_random_drone_position,
         reward=args.reward,
         speed_action=args.speed_action,
-        end_when_all_collected=args.end_when_all_collected
+        end_when_all_collected=args.end_when_all_collected,
+        use_pypy=args.use_pypy
     )
 
 

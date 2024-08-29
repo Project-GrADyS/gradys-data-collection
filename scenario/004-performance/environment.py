@@ -34,7 +34,8 @@ class GrADySEnvironment(ParallelEnv):
                  full_random_drone_position: bool = False,
                  reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
                  speed_action: bool = True,
-                 end_when_all_collected: bool = True):
+                 end_when_all_collected: bool = True,
+                 use_pypy: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -74,26 +75,26 @@ class GrADySEnvironment(ParallelEnv):
         env_id += 1
 
         command_args = [
-            "python", "remote_environment.py",
-            f"--object-name={object_name}",
-            f"--render-mode={render_mode}" if render_mode else "",
-            f"--algorithm-iteration-interval={algorithm_iteration_interval}",
-            f"--num-drones={num_drones}",
-            f"--num-sensors={num_sensors}",
-            f"--scenario-size={scenario_size}",
-            f"--max-episode-length={max_episode_length}",
-            f"--max-seconds-stalled={max_seconds_stalled}",
-            f"--communication-range={communication_range}",
-            f"--state-num-closest-sensors={state_num_closest_sensors}",
-            f"--state-num-closest-drones={state_num_closest_drones}",
-            f"--state-mode={state_mode}",
-            "--id-on-state" if id_on_state else "--no-id-on-state",
-            f"--min-sensor-priority={min_sensor_priority}",
-            f"--max-sensor-priority={max_sensor_priority}",
-            "--full-random-drone-position" if full_random_drone_position else "--no-full-random-drone-position",
+            "pypy" if use_pypy else "python", "remote_environment.py",
+            f"--object_name={object_name}",
+            f"--render_mode={render_mode}" if render_mode else "",
+            f"--algorithm_iteration_interval={algorithm_iteration_interval}",
+            f"--num_drones={num_drones}",
+            f"--num_sensors={num_sensors}",
+            f"--scenario_size={scenario_size}",
+            f"--max_episode_length={max_episode_length}",
+            f"--max_seconds_stalled={max_seconds_stalled}",
+            f"--communication_range={communication_range}",
+            f"--state_num_closest_sensors={state_num_closest_sensors}",
+            f"--state_num_closest_drones={state_num_closest_drones}",
+            f"--state_mode={state_mode}",
+            f"--id_on_state={id_on_state}",
+            f"--min_sensor_priority={min_sensor_priority}",
+            f"--max_sensor_priority={max_sensor_priority}",
+            f"--full_random_drone_position={full_random_drone_position}",
             f"--reward={reward}",
-            "--speed-action" if speed_action else "--no-speed-action",
-            "--end-when-all-collected" if end_when_all_collected else "--no-end-when-all-collected"
+            f"--speed_action={speed_action}",
+            f"--end_when_all_collected={end_when_all_collected}"
         ]
         
         # Remove any empty strings
