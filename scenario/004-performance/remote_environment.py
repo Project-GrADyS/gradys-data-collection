@@ -1,7 +1,10 @@
+from dataclasses import dataclass
 import math
 import random
 from time import sleep
 from typing import List, Optional, Literal, Tuple
+
+import Pyro5.server
 
 from gradysim.protocol.interface import IProtocol
 from gradysim.protocol.messages.communication import BroadcastMessageCommand
@@ -18,7 +21,37 @@ from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
 from gradysim.protocol.position import squared_distance
 
+import numpy as np
+
+import tyro
+
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
+
+
+@dataclass
+class Args:
+    object_name: str
+
+    render_mode: Optional[Literal["visual", "console"]] = None
+    algorithm_iteration_interval: float = 0.5
+    num_drones: int = 1
+    num_sensors: int = 2
+    scenario_size: float = 100
+    max_episode_length: float = 500
+    max_seconds_stalled: int = 30
+    communication_range: float = 20
+    state_num_closest_sensors: int = 2
+    state_num_closest_drones: int = 2
+    state_mode: StateMode = "relative"
+    id_on_state: bool = True
+    min_sensor_priority: float = 0.1
+    max_sensor_priority: float = 1
+    full_random_drone_position: bool = False
+    reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
+    speed_action: bool = True
+    end_when_all_collected: bool = True
+
+
 
 def create_sensor(priority: float):
     class SensorProtocol(IProtocol):
@@ -53,7 +86,7 @@ def create_drone_protocol(sensor_ids, algorithm_interval, speed_action: bool):
         current_position: Tuple[float, float, float]
 
         def act(self, action: List[float], coordinate_limit: float) -> None:
-            self.provider.tracked_variables['current_action'] = action.tolist()
+            self.provider.tracked_variables['current_action'] = action
 
             direction: float = action[0] * 2 * math.pi
 
@@ -124,7 +157,7 @@ def create_drone_protocol(sensor_ids, algorithm_interval, speed_action: bool):
     return DroneProtocol
 
 
-class GrADySEnvironment:
+class GradysRemoteEnvironment:
     simulator: Simulator
     controller: VisualizationController
 
@@ -196,53 +229,7 @@ class GrADySEnvironment:
         self.speed_action = speed_action
         self.end_when_all_collected = end_when_all_collected
 
-    def observation_space(self, agent):
-        agent_id = 1 if self.id_on_state else 0
-        if self.state_mode == "absolute":
-            self_position = 2
-            agent_positions = self.state_num_closest_drones * 2
-            sensor_positions = self.state_num_closest_sensors * 2
-
-            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "distance_angle" or self.state_mode == "relative":
-            agent_positions = self.state_num_closest_drones * 2
-            sensor_positions = self.state_num_closest_sensors * 2
-
-            return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "angle":
-            agent_positions = self.state_num_closest_drones * 1
-            sensor_positions = self.state_num_closest_sensors * 1
-
-            return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "all_positions":
-            # Observe locations of all agents
-            agent_positions = self.num_drones * 2
-            agent_index = 1
-            sensor_positions = self.num_sensors * 2
-            sensor_visited = self.num_sensors
-
-            return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited + agent_id,))
-
-    def action_space(self, agent):
-        # Drone can move in any direction
-        if self.speed_action:
-            return Box(0, 1, shape=(2,))
-        else:
-            return Box(0, 1, shape=(1,))
-
-    def render(self):
-        """
-        Renders the environment. In human mode, it can print to terminal, open
-        up a graphical window, or open up some other display that a human can see and understand.
-        """
-        if self.render_mode is None:
-            gymnasium.logger.warn(
-                "You are calling render method without specifying any render mode."
-            )
-            return
-
-        # Visualization is handled by the simulator
-
+    @Pyro5.server.expose
     def close(self):
         """
         Close should release any graphical displays, subprocesses, network connections
@@ -292,7 +279,7 @@ class GrADySEnvironment:
                 closest_agents.flatten(),
                 closest_unvisited_sensors.flatten(),
                 np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
+            ]).tolist()
         return state
 
     def observe_simulation_angle(self):
@@ -331,7 +318,7 @@ class GrADySEnvironment:
                 closest_agents,
                 closest_unvisited_sensors,
                 np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
+            ]).tolist()
         return state
 
     def observe_simulation_relative_positions(self):
@@ -377,7 +364,7 @@ class GrADySEnvironment:
                 closest_agents.flatten(),
                 closest_unvisited_sensors.flatten(),
                 np.array([agent_index / self.num_drones]) if self.id_on_state else []
-            ])
+            ]).tolist()
         return state
 
     def observe_simulation_absolute_positions(self):
@@ -413,7 +400,7 @@ class GrADySEnvironment:
                 closest_agents.flatten() / self.scenario_size,
                 closest_unvisited_sensors.flatten() / self.scenario_size,
                 np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
+            ]).tolist()
         return state
 
     def observe_simulation_all_positions(self):
@@ -440,7 +427,7 @@ class GrADySEnvironment:
             state[f"drone{agent_index}"] = np.concatenate([
                 general_observations,
                 np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
+            ]).tolist()
         return state
 
     def observe_simulation(self):
@@ -458,6 +445,7 @@ class GrADySEnvironment:
     def detect_out_of_bounds_agent(self, agent: Node) -> bool:
         return abs(agent.position[0]) > self.scenario_size or abs(agent.position[1]) > self.scenario_size
 
+    @Pyro5.server.expose
     def reset(self, seed=None, options=None):
         """
         Reset needs to initialize the `agents` attribute and must set up the
@@ -466,100 +454,106 @@ class GrADySEnvironment:
         hands that are played.
         Returns the observations for each agent
         """
-        self.agents = self.possible_agents.copy()
+        try:
+            self.agents = self.possible_agents.copy()
 
-        builder = SimulationBuilder(SimulationConfiguration(
-            debug=False,
-            execution_logging=False,
-            duration=self.max_episode_length
-        ))
-        builder.add_handler(CommunicationHandler(CommunicationMedium(
-            transmission_range=self.communication_range
-        )))
-        builder.add_handler(MobilityHandler(MobilityConfiguration(
-            update_rate=self.algorithm_iteration_interval / 2
-        )))
-        builder.add_handler(TimerHandler())
-
-        if self.render_mode == "visual":
-            builder.add_handler(VisualizationHandler(VisualizationConfiguration(
-                open_browser=False,
-                x_range=(-self.scenario_size, self.scenario_size),
-                y_range=(-self.scenario_size, self.scenario_size),
-                z_range=(0, self.scenario_size),
+            builder = SimulationBuilder(SimulationConfiguration(
+                debug=False,
+                execution_logging=False,
+                duration=self.max_episode_length
+            ))
+            builder.add_handler(CommunicationHandler(CommunicationMedium(
+                transmission_range=self.communication_range
             )))
-
-        class GrADySHandler(INodeHandler):
-            event_loop: EventLoop
-
-            @staticmethod
-            def get_label() -> str:
-                return "GrADySHandler"
-
-            def inject(self, event_loop: EventLoop) -> None:
-                self.event_loop = event_loop
-                self.last_iteration = 0
-                self.iterate_algorithm()
-
-            def register_node(self, node: Node) -> None:
-                pass
-
-            def iterate_algorithm(handler_self):
-                self.algorithm_iteration_finished = True
-
-                handler_self.event_loop.schedule_event(
-                    handler_self.event_loop.current_time + self.algorithm_iteration_interval,
-                    handler_self.iterate_algorithm
-                )
-
-        builder.add_handler(GrADySHandler())
-
-        self.sensor_node_ids = []
-
-        for i in range(self.num_sensors):
-            sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
-
-            self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
-                random.uniform(-self.scenario_size, self.scenario_size),
-                random.uniform(-self.scenario_size, self.scenario_size),
-                0
+            builder.add_handler(MobilityHandler(MobilityConfiguration(
+                update_rate=self.algorithm_iteration_interval / 2
             )))
+            builder.add_handler(TimerHandler())
 
-        self.agent_node_ids = []
-        for i in range(self.num_drones):
-            drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval,
-                                                   self.speed_action)
+            if self.render_mode == "visual":
+                builder.add_handler(VisualizationHandler(VisualizationConfiguration(
+                    open_browser=False,
+                    x_range=(-self.scenario_size, self.scenario_size),
+                    y_range=(-self.scenario_size, self.scenario_size),
+                    z_range=(0, self.scenario_size),
+                )))
 
-            if self.full_random_drone_position:
-                self.agent_node_ids.append(builder.add_node(drone_protocol, (
+            class GrADySHandler(INodeHandler):
+                event_loop: EventLoop
+
+                @staticmethod
+                def get_label() -> str:
+                    return "GrADySHandler"
+
+                def inject(self, event_loop: EventLoop) -> None:
+                    self.event_loop = event_loop
+                    self.last_iteration = 0
+                    self.iterate_algorithm()
+
+                def register_node(self, node: Node) -> None:
+                    pass
+
+                def iterate_algorithm(handler_self):
+                    self.algorithm_iteration_finished = True
+
+                    handler_self.event_loop.schedule_event(
+                        handler_self.event_loop.current_time + self.algorithm_iteration_interval,
+                        handler_self.iterate_algorithm
+                    )
+
+            builder.add_handler(GrADySHandler())
+
+            self.sensor_node_ids = []
+
+            for i in range(self.num_sensors):
+                sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
+
+                self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
                     random.uniform(-self.scenario_size, self.scenario_size),
                     random.uniform(-self.scenario_size, self.scenario_size),
                     0
                 )))
-            else:
-                self.agent_node_ids.append(builder.add_node(drone_protocol, (
-                    random.uniform(-2, 2),
-                    random.uniform(-2, 2),
-                    0
-                )))
 
-        self.simulator = builder.build()
-        if self.render_mode == "visual":
-            self.controller = VisualizationController()
+            self.agent_node_ids = []
+            for i in range(self.num_drones):
+                drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval,
+                                                    self.speed_action)
 
-        # Running a single simulation step to get the initial observations
-        if not self.simulator.step_simulation():
-            raise ValueError("Simulation failed to start")
+                if self.full_random_drone_position:
+                    self.agent_node_ids.append(builder.add_node(drone_protocol, (
+                        random.uniform(-self.scenario_size, self.scenario_size),
+                        random.uniform(-self.scenario_size, self.scenario_size),
+                        0
+                    )))
+                else:
+                    self.agent_node_ids.append(builder.add_node(drone_protocol, (
+                        random.uniform(-2, 2),
+                        random.uniform(-2, 2),
+                        0
+                    )))
 
-        self.episode_duration = 0
-        self.stall_duration = 0
-        self.reward_sum = 0
-        self.max_reward = -math.inf
-        self.sensors_collected = 0
-        self.collection_times = [self.max_episode_length for _ in range(self.num_sensors)]
+            self.simulator = builder.build()
+            if self.render_mode == "visual":
+                self.controller = VisualizationController()
 
-        return self.observe_simulation(), {}
+            # Running a single simulation step to get the initial observations
+            if not self.simulator.step_simulation():
+                raise ValueError("Simulation failed to start")
 
+            self.episode_duration = 0
+            self.stall_duration = 0
+            self.reward_sum = 0
+            self.max_reward = -math.inf
+            self.sensors_collected = 0
+            self.collection_times = [self.max_episode_length for _ in range(self.num_sensors)]
+
+            return self.observe_simulation(), {}
+        except:
+            import traceback
+            traceback.print_exc()
+            return None
+
+    @Pyro5.server.expose
     def step(self, actions):
         """
         step(action) takes in an action for each agent and should return the
@@ -685,3 +679,19 @@ class GrADySEnvironment:
             }
 
         return observations, rewards, terminations, truncations, infos
+
+
+if __name__ == "__main__":
+    args = tyro.cli(Args)
+
+    env = GradysRemoteEnvironment(args.render_mode, args.algorithm_iteration_interval, args.num_drones, args.num_sensors, 
+                                           args.scenario_size, args.max_episode_length, args.max_seconds_stalled, args.communication_range, 
+                                           args.state_num_closest_sensors, args.state_num_closest_drones, args.state_mode, args.id_on_state, 
+                                           args.min_sensor_priority, args.max_sensor_priority, args.full_random_drone_position, args.reward, 
+                                           args.speed_action, args.end_when_all_collected)
+    
+    Pyro5.server.serve(
+        {
+            env: args.object_name
+        }, use_ns=True
+    )

@@ -21,5 +21,5 @@ def create_greedy_heuristics(num_closest_agents: int, num_closest_sensors: int):
 
 def create_random_heuristics(num_closest_agents: int, num_closest_sensors: int):
     def heuristics(_observation: np.ndarray) -> np.ndarray:
-        return np.random.uniform(0, 1, size=(1,))
+        return np.random.uniform(0, 1, size=(2,))
     return heuristics

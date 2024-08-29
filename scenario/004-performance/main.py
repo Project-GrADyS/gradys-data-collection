@@ -88,7 +88,7 @@ class Args:
     """if toggled, the state will be modified to include the agent's ID"""
     state_num_closest_sensors: int = 2
     """the number of closest sensors to consider in the state"""
-    state_num_closest_drones: int = 2
+    state_num_closest_drones: int = 1
     """the number of closest drones to consider in the state"""
 
     algorithm_iteration_interval: float = 0.5
