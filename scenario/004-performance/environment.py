@@ -9,8 +9,6 @@ import subprocess
 import sys
 import Pyro5.api
 
-env_id = 0
-
 class GrADySEnvironment(ParallelEnv):
     remote_env: GradysRemoteEnvironment
 
@@ -70,9 +68,8 @@ class GrADySEnvironment(ParallelEnv):
         self.end_when_all_collected = end_when_all_collected
         self.agents = self.possible_agents.copy()
 
-        global env_id
-        object_name = f"environment{env_id}"
-        env_id += 1
+        import uuid
+        object_name = f"environment{uuid.uuid4()}"
 
         command_args = [
             "pypy" if use_pypy else "python", "remote_environment.py",
