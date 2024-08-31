@@ -30,7 +30,7 @@ def parse_args():
     import argparse
     parser = argparse.ArgumentParser(description="Process some arguments.")
 
-    parser.add_argument('--object_name', type=str, required=True, help='Name of the object')
+    parser.add_argument('--object_name', type=str, default="environment", help='Name of the object')
     
     parser.add_argument('--render_mode', type=str, choices=['visual', 'console'], help='Render mode (visual or console)')
     parser.add_argument('--algorithm_iteration_interval', type=float, default=0.5, help='Interval for algorithm iteration')
@@ -55,105 +55,104 @@ def parse_args():
 
     return parser.parse_args()
 
-def create_sensor(priority: int):
-    class SensorProtocol(IProtocol):
-        has_collected: bool
+class SensorProtocol(IProtocol):
+    has_collected: bool
 
-        def initialize(self) -> None:
-            self.priority = priority
-            self.has_collected = False
-            self.provider.tracked_variables["collected"] = self.has_collected
+    min_priority: int = 0
+    max_priority: int = 1
 
-        def handle_packet(self, message: str) -> None:
-            self.has_collected = True
-            self.provider.tracked_variables["collected"] = self.has_collected
+    def initialize(self) -> None:
+        self.priority = random.uniform(self.min_priority, self.max_priority)
+        self.has_collected = False
+        self.provider.tracked_variables["collected"] = self.has_collected
 
-        def handle_timer(self, timer: str) -> None:
-            pass
+    def handle_packet(self, message: str) -> None:
+        self.has_collected = True
+        self.provider.tracked_variables["collected"] = self.has_collected
 
-        def handle_telemetry(self, telemetry: Telemetry) -> None:
-            pass
+    def handle_timer(self, timer: str) -> None:
+        pass
 
-        def finish(self) -> None:
-            pass
+    def handle_telemetry(self, telemetry: Telemetry) -> None:
+        pass
 
-    return SensorProtocol
+    def finish(self) -> None:
+        pass
 
 
-def create_drone_protocol(sensor_ids, algorithm_interval, speed_action: bool):
-    class DroneProtocol(IProtocol):
-        current_position: Tuple[float, float, float]
+class DroneProtocol(IProtocol):
+    current_position: Tuple[float, float, float]
+    speed_action: bool = False
+    algorithm_interval: float = 0.1
 
-        def act(self, action: List[float], coordinate_limit: float) -> None:
-            self.provider.tracked_variables['current_action'] = action
+    def act(self, action: List[float], coordinate_limit: float) -> None:
+        self.provider.tracked_variables['current_action'] = action
 
-            direction: float = action[0] * 2 * math.pi
+        direction: float = action[0] * 2 * math.pi
 
-            if speed_action:
-                speed: float = action[1] * 15
-                command = SetSpeedMobilityCommand(speed)
-                self.provider.send_mobility_command(command)
-
-            unit_vector = [math.cos(direction), math.sin(direction)]
-
-            distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
-            distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
-
-            # Maintain direction but bound destination within scenario
-            if distance_to_x_edge > 0 and distance_to_y_edge > 0:
-                scale_x = distance_to_x_edge / abs(unit_vector[0])
-                scale_y = distance_to_y_edge / abs(unit_vector[1])
-                scale = min(scale_x, scale_y)
-
-                destination = [
-                    self.current_position[0] + unit_vector[0] * scale,
-                    self.current_position[1] + unit_vector[1] * scale,
-                    0
-                ]
-
-            # If the drone is at the edge of the scenario, prevent it from leaving
-            else:
-                destination = [
-                    self.current_position[0] + unit_vector[0] * 1e5,
-                    self.current_position[1] + unit_vector[1] * 1e5,
-                    0
-                ]
-                # Bound destination within scenario
-                destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
-                destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
-
-            # Start travelling in the direction of travel
-            command = GotoCoordsMobilityCommand(*destination)
+        if self.speed_action:
+            speed: float = action[1] * 15
+            command = SetSpeedMobilityCommand(speed)
             self.provider.send_mobility_command(command)
 
-            if speed_action:
-                self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval - 0.1)
-            else:
-                self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+        unit_vector = [math.cos(direction), math.sin(direction)]
 
-        def initialize(self) -> None:
-            self.current_position = (0, 0, 0)
-            self._collect_packets()
+        distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
+        distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
 
-        def handle_timer(self, timer: str) -> None:
-            self._collect_packets()
-            if not speed_action:
-                self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+        # Maintain direction but bound destination within scenario
+        if distance_to_x_edge > 0 and distance_to_y_edge > 0:
+            scale_x = distance_to_x_edge / abs(unit_vector[0])
+            scale_y = distance_to_y_edge / abs(unit_vector[1])
+            scale = min(scale_x, scale_y)
 
-        def handle_packet(self, message: str) -> None:
-            pass
+            destination = [
+                self.current_position[0] + unit_vector[0] * scale,
+                self.current_position[1] + unit_vector[1] * scale,
+                0
+            ]
 
-        def handle_telemetry(self, telemetry: Telemetry) -> None:
-            self.current_position = telemetry.current_position
+        # If the drone is at the edge of the scenario, prevent it from leaving
+        else:
+            destination = [
+                self.current_position[0] + unit_vector[0] * 1e5,
+                self.current_position[1] + unit_vector[1] * 1e5,
+                0
+            ]
+            # Bound destination within scenario
+            destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
+            destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
 
-        def _collect_packets(self) -> None:
-            command = BroadcastMessageCommand("")
-            self.provider.send_communication_command(command)
+        # Start travelling in the direction of travel
+        command = GotoCoordsMobilityCommand(*destination)
+        self.provider.send_mobility_command(command)
 
-        def finish(self) -> None:
-            pass
+        if self.speed_action:
+            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval - 0.1)
+        else:
+            self.provider.schedule_timer("", self.provider.current_time() + 0.1)
 
-    return DroneProtocol
+    def initialize(self) -> None:
+        self.current_position = (0, 0, 0)
+        self._collect_packets()
+
+    def handle_timer(self, timer: str) -> None:
+        self._collect_packets()
+        if not self.speed_action:
+            self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+
+    def handle_packet(self, message: str) -> None:
+        pass
+
+    def handle_telemetry(self, telemetry: Telemetry) -> None:
+        self.current_position = telemetry.current_position
+
+    def _collect_packets(self) -> None:
+        command = BroadcastMessageCommand("")
+        self.provider.send_communication_command(command)
+
+    def finish(self) -> None:
+        pass
 
 
 class GradysRemoteEnvironment:
@@ -453,104 +452,100 @@ class GradysRemoteEnvironment:
         hands that are played.
         Returns the observations for each agent
         """
-        try:
-            self.agents = self.possible_agents.copy()
+        self.agents = self.possible_agents.copy()
 
-            builder = SimulationBuilder(SimulationConfiguration(
-                debug=False,
-                execution_logging=False,
-                duration=self.max_episode_length
-            ))
-            builder.add_handler(CommunicationHandler(CommunicationMedium(
-                transmission_range=self.communication_range
+        builder = SimulationBuilder(SimulationConfiguration(
+            execution_logging=False,
+            duration=self.max_episode_length
+        ))
+        builder.add_handler(CommunicationHandler(CommunicationMedium(
+            transmission_range=self.communication_range
+        )))
+        builder.add_handler(MobilityHandler(MobilityConfiguration(
+            update_rate=self.algorithm_iteration_interval / 2
+        )))
+        builder.add_handler(TimerHandler())
+
+        if self.render_mode == "visual":
+            builder.add_handler(VisualizationHandler(VisualizationConfiguration(
+                open_browser=False,
+                x_range=(-self.scenario_size, self.scenario_size),
+                y_range=(-self.scenario_size, self.scenario_size),
+                z_range=(0, self.scenario_size),
             )))
-            builder.add_handler(MobilityHandler(MobilityConfiguration(
-                update_rate=self.algorithm_iteration_interval / 2
+
+        class GrADySHandler(INodeHandler):
+            event_loop: EventLoop
+
+            @staticmethod
+            def get_label() -> str:
+                return "GrADySHandler"
+
+            def inject(self, event_loop: EventLoop) -> None:
+                self.event_loop = event_loop
+                self.last_iteration = 0
+                self.iterate_algorithm()
+
+            def register_node(self, node: Node) -> None:
+                pass
+
+            def iterate_algorithm(handler_self):
+                self.algorithm_iteration_finished = True
+
+                handler_self.event_loop.schedule_event(
+                    handler_self.event_loop.current_time + self.algorithm_iteration_interval,
+                    handler_self.iterate_algorithm
+                )
+
+        builder.add_handler(GrADySHandler())
+
+        self.sensor_node_ids = []
+
+        SensorProtocol.min_priority = self.min_sensor_priority
+        SensorProtocol.max_priority = self.max_sensor_priority
+        for i in range(self.num_sensors):
+
+            self.sensor_node_ids.append(builder.add_node(SensorProtocol, (
+                random.uniform(-self.scenario_size, self.scenario_size),
+                random.uniform(-self.scenario_size, self.scenario_size),
+                0
             )))
-            builder.add_handler(TimerHandler())
 
-            if self.render_mode == "visual":
-                builder.add_handler(VisualizationHandler(VisualizationConfiguration(
-                    open_browser=False,
-                    x_range=(-self.scenario_size, self.scenario_size),
-                    y_range=(-self.scenario_size, self.scenario_size),
-                    z_range=(0, self.scenario_size),
-                )))
+        self.agent_node_ids = []
+        DroneProtocol.speed_action = self.speed_action
+        DroneProtocol.algorithm_interval = self.algorithm_iteration_interval
 
-            class GrADySHandler(INodeHandler):
-                event_loop: EventLoop
+        for i in range(self.num_drones):
 
-                @staticmethod
-                def get_label() -> str:
-                    return "GrADySHandler"
-
-                def inject(self, event_loop: EventLoop) -> None:
-                    self.event_loop = event_loop
-                    self.last_iteration = 0
-                    self.iterate_algorithm()
-
-                def register_node(self, node: Node) -> None:
-                    pass
-
-                def iterate_algorithm(handler_self):
-                    self.algorithm_iteration_finished = True
-
-                    handler_self.event_loop.schedule_event(
-                        handler_self.event_loop.current_time + self.algorithm_iteration_interval,
-                        handler_self.iterate_algorithm
-                    )
-
-            builder.add_handler(GrADySHandler())
-
-            self.sensor_node_ids = []
-
-            for i in range(self.num_sensors):
-                sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
-
-                self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
+            if self.full_random_drone_position:
+                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
                     random.uniform(-self.scenario_size, self.scenario_size),
                     random.uniform(-self.scenario_size, self.scenario_size),
                     0
                 )))
+            else:
+                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                    random.uniform(-2, 2),
+                    random.uniform(-2, 2),
+                    0
+                )))
 
-            self.agent_node_ids = []
-            for i in range(self.num_drones):
-                drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval,
-                                                    self.speed_action)
+        self.simulator = builder.build()
+        if self.render_mode == "visual":
+            self.controller = VisualizationController()
 
-                if self.full_random_drone_position:
-                    self.agent_node_ids.append(builder.add_node(drone_protocol, (
-                        random.uniform(-self.scenario_size, self.scenario_size),
-                        random.uniform(-self.scenario_size, self.scenario_size),
-                        0
-                    )))
-                else:
-                    self.agent_node_ids.append(builder.add_node(drone_protocol, (
-                        random.uniform(-2, 2),
-                        random.uniform(-2, 2),
-                        0
-                    )))
+        # Running a single simulation step to get the initial observations
+        if not self.simulator.step_simulation():
+            raise ValueError("Simulation failed to start")
 
-            self.simulator = builder.build()
-            if self.render_mode == "visual":
-                self.controller = VisualizationController()
+        self.episode_duration = 0
+        self.stall_duration = 0
+        self.reward_sum = 0
+        self.max_reward = -math.inf
+        self.sensors_collected = 0
+        self.collection_times = [self.max_episode_length for _ in range(self.num_sensors)]
 
-            # Running a single simulation step to get the initial observations
-            if not self.simulator.step_simulation():
-                raise ValueError("Simulation failed to start")
-
-            self.episode_duration = 0
-            self.stall_duration = 0
-            self.reward_sum = 0
-            self.max_reward = -math.inf
-            self.sensors_collected = 0
-            self.collection_times = [self.max_episode_length for _ in range(self.num_sensors)]
-
-            return self.observe_simulation(), {}
-        except:
-            import traceback
-            traceback.print_exc()
-            return None
+        return self.observe_simulation(), {}
 
     @Pyro5.server.expose
     def step(self, actions):
