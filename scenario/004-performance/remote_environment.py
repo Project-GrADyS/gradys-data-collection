@@ -344,8 +344,8 @@ class GradysRemoteEnvironment:
         # Normalizing sensor positions
         closest_unvisited_sensors *= -1
         closest_unvisited_sensors += agent_nodes_reshaped
-        closest_unvisited_sensors += self.scenario_size
-        closest_unvisited_sensors /= self.scenario_size * 2
+        closest_unvisited_sensors += float(self.scenario_size)
+        closest_unvisited_sensors /= float(self.scenario_size * 2)
 
         # Collecting the closest agent coordinates
         closest_agents = agent_nodes[all_closest_agents]
