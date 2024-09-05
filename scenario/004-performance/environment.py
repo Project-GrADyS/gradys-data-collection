@@ -1,6 +1,10 @@
-from typing import Optional, Literal
+import os
+import shutil
+import time
+from typing import Optional, Literal, cast
 
 import gymnasium
+from Pyro5.errors import NamingError
 from gymnasium.spaces import Box
 import numpy as np
 from pettingzoo import ParallelEnv
@@ -8,6 +12,46 @@ from remote_environment import GradysRemoteEnvironment, StateMode
 import subprocess
 import sys
 import Pyro5.api
+
+from arguments import EnvironmentArgs
+
+
+def observation_space_from_args(args: EnvironmentArgs):
+    agent_id = 1 if args.id_on_state else 0
+    if args.state_mode == "absolute":
+        args_position = 2
+        agent_positions = args.state_num_closest_drones * 2
+        sensor_positions = args.state_num_closest_sensors * 2
+
+        return Box(0, 1, shape=(args_position + agent_positions + sensor_positions + agent_id,))
+    elif args.state_mode == "distance_angle" or args.state_mode == "relative":
+        agent_positions = args.state_num_closest_drones * 2
+        sensor_positions = args.state_num_closest_sensors * 2
+
+        return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_id,))
+    elif args.state_mode == "angle":
+        agent_positions = args.state_num_closest_drones * 1
+        sensor_positions = args.state_num_closest_sensors * 1
+
+        return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
+    elif args.state_mode == "all_positions":
+        # Observe locations of all agents
+        agent_positions = args.num_drones * 2
+        agent_index = 1
+        sensor_positions = args.num_sensors * 2
+        sensor_visited = args.num_sensors
+
+        return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited + agent_id,))
+
+
+def action_space_from_args(args: EnvironmentArgs):
+    # Drone can move in any direction
+    if args.speed_action:
+        return Box(0, 1, shape=(2,))
+    else:
+        return Box(0, 1, shape=(1,))
+
+
 
 class GrADySEnvironment(ParallelEnv):
     remote_env: GradysRemoteEnvironment
@@ -33,7 +77,8 @@ class GrADySEnvironment(ParallelEnv):
                  reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
                  speed_action: bool = True,
                  end_when_all_collected: bool = True,
-                 use_pypy: bool = False):
+                 use_pypy: bool = False,
+                 use_remote: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -71,10 +116,13 @@ class GrADySEnvironment(ParallelEnv):
         import uuid
         object_name = f"environment{uuid.uuid4()}"
 
+        pypy_path = shutil.which("pypy")
+        python_path = sys.executable
+
         command_args = [
-            "pypy" if use_pypy else "python", "remote_environment.py",
+            pypy_path if use_pypy else python_path, "remote_environment.py",
             f"--object_name={object_name}",
-            f"--render_mode={render_mode}" if render_mode else "",
+            f"--render_mode={render_mode}" if render_mode else None,
             f"--algorithm_iteration_interval={algorithm_iteration_interval}",
             f"--num_drones={num_drones}",
             f"--num_sensors={num_sensors}",
@@ -97,49 +145,52 @@ class GrADySEnvironment(ParallelEnv):
         # Remove any empty strings
         command_args = [arg for arg in command_args if arg]
 
-        print("Iniciando servidor com comando:")
-        print(command_args)
+        # print("Iniciando servidor com comando:")
+        # print(command_args)
 
-        # Launch the remote environment process
-        self.remote_env_process = subprocess.Popen(command_args, stderr=sys.stdout, stdout=sys.stdout)
-        
-        # Connect to it using Pyro5
-        uri_string = f"PYRONAME:{object_name}"
-        self.remote_env = Pyro5.api.Proxy(uri_string)
+        if use_remote:
+            # Launch the remote environment process
+            self.remote_env_process = subprocess.Popen(command_args, stderr=sys.stderr, stdout=subprocess.PIPE)
+
+            # Connect to it using Pyro5
+            uri_string = f"PYRONAME:{object_name}"
+            ns = Pyro5.api.locate_ns()
+            while True:
+                try:
+                    ns.lookup(object_name)
+                    break
+                except NamingError:
+                    time.sleep(1)
+                    continue
+            self.remote_env = Pyro5.api.Proxy(uri_string)
+        else:
+            self.remote_env = GradysRemoteEnvironment(
+                render_mode=render_mode,
+                algorithm_iteration_interval=algorithm_iteration_interval,
+                num_drones=num_drones,
+                num_sensors=num_sensors,
+                scenario_size=scenario_size,
+                max_episode_length=max_episode_length,
+                max_seconds_stalled=max_seconds_stalled,
+                communication_range=communication_range,
+                state_num_closest_sensors=state_num_closest_sensors,
+                state_num_closest_drones=state_num_closest_drones,
+                state_mode=state_mode,
+                id_on_state=id_on_state,
+                min_sensor_priority=min_sensor_priority,
+                max_sensor_priority=max_sensor_priority,
+                full_random_drone_position=full_random_drone_position,
+                reward=reward,
+                speed_action=speed_action,
+                end_when_all_collected=end_when_all_collected,
+            )
+
 
     def observation_space(self, agent):
-        agent_id = 1 if self.id_on_state else 0
-        if self.state_mode == "absolute":
-            self_position = 2
-            agent_positions = self.state_num_closest_drones * 2
-            sensor_positions = self.state_num_closest_sensors * 2
-
-            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "distance_angle" or self.state_mode == "relative":
-            agent_positions = self.state_num_closest_drones * 2
-            sensor_positions = self.state_num_closest_sensors * 2
-
-            return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "angle":
-            agent_positions = self.state_num_closest_drones * 1
-            sensor_positions = self.state_num_closest_sensors * 1
-
-            return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "all_positions":
-            # Observe locations of all agents
-            agent_positions = self.num_drones * 2
-            agent_index = 1
-            sensor_positions = self.num_sensors * 2
-            sensor_visited = self.num_sensors
-
-            return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited + agent_id,))
+        return observation_space_from_args(cast(EnvironmentArgs, self))
 
     def action_space(self, agent):
-        # Drone can move in any direction
-        if self.speed_action:
-            return Box(0, 1, shape=(2,))
-        else:
-            return Box(0, 1, shape=(1,))
+        return action_space_from_args(cast(EnvironmentArgs, self))
 
     def render(self):
         """
@@ -189,3 +240,27 @@ class GrADySEnvironment(ParallelEnv):
             key: value.tolist() for key, value in actions.items()
         })
         return {key: np.array(value) for key,value in observations.items()}, rewards, terminations, truncations, infos
+
+
+def make_env(args: EnvironmentArgs, evaluation=False):
+    return GrADySEnvironment(
+        algorithm_iteration_interval=args.algorithm_iteration_interval,
+        render_mode=None,
+        num_drones=args.num_drones,
+        num_sensors=args.num_sensors,
+        max_episode_length=args.max_episode_length,
+        max_seconds_stalled=args.max_seconds_stalled,
+        scenario_size=args.scenario_size,
+        state_num_closest_sensors=args.state_num_closest_sensors,
+        state_num_closest_drones=args.state_num_closest_drones,
+        state_mode=args.state_mode,
+        id_on_state=args.id_on_state,
+        min_sensor_priority=args.min_sensor_priority,
+        max_sensor_priority=args.max_sensor_priority,
+        full_random_drone_position=False if evaluation else args.full_random_drone_position,
+        reward=args.reward,
+        speed_action=args.speed_action,
+        end_when_all_collected=args.end_when_all_collected,
+        use_pypy=args.use_pypy,
+        use_remote=args.use_remote
+    )
