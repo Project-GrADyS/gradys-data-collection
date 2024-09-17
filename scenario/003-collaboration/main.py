@@ -448,7 +448,7 @@ def main():
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
-            writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+            writer.add_scalar("charts/SPS", global_step / (time.time() - start_time), global_step)
             writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
 
             writer.add_scalar(
@@ -482,7 +482,7 @@ def main():
                 global_step,
             )
 
-            print(f"{args.exp_name} - SPS:", int(global_step / (time.time() - start_time)))
+            print(f"{args.exp_name} - SPS:", global_step / (time.time() - start_time))
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
             evaluate_checkpoint()
