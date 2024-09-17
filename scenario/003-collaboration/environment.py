@@ -672,6 +672,7 @@ class GrADySEnvironment(ParallelEnv):
                     "sum_reward": self.reward_sum,
                     "avg_collection_time": sum(self.collection_times) / self.num_sensors,
                     "episode_duration": self.episode_duration,
+                    "completion_time": self.max_episode_length if not all_sensors_collected else self.simulator._current_timestamp,
                     "all_collected": all_sensors_collected,
                     "cause": end_cause
                 } for agent in self.agents
