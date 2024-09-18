@@ -101,7 +101,7 @@ class Args:
     max_sensor_priority: float = 1.0
     full_random_drone_position: bool = False
 
-    reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward'
+    reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
 
     speed_action: bool = True
 
