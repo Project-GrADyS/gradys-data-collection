@@ -24,109 +24,106 @@ from pettingzoo import ParallelEnv
 
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
 
-def create_sensor(priority: float):
-    class SensorProtocol(IProtocol):
-        has_collected: bool
-        priority: float
+class SensorProtocol(IProtocol):
+    has_collected: bool
 
-        def initialize(self) -> None:
-            self.priority = priority
-            self.provider.tracked_variables["priority"] = priority
+    min_priority: int = 0
+    max_priority: int = 1
 
-            self.has_collected = False
-            self.provider.tracked_variables["collected"] = self.has_collected
+    def initialize(self) -> None:
+        self.priority = random.uniform(self.min_priority, self.max_priority)
+        self.provider.tracked_variables["priority"] = self.priority
+        self.has_collected = False
+        self.provider.tracked_variables["collected"] = self.has_collected
 
-        def handle_packet(self, message: str) -> None:
-            self.has_collected = True
-            self.provider.tracked_variables["collected"] = self.has_collected
+    def handle_packet(self, message: str) -> None:
+        self.has_collected = True
+        self.provider.tracked_variables["collected"] = self.has_collected
 
-        def handle_timer(self, timer: str) -> None:
-            pass
+    def handle_timer(self, timer: str) -> None:
+        pass
 
-        def handle_telemetry(self, telemetry: Telemetry) -> None:
-            pass
+    def handle_telemetry(self, telemetry: Telemetry) -> None:
+        pass
 
-        def finish(self) -> None:
-            pass
-    return SensorProtocol
-
-
-def create_drone_protocol(sensor_ids, algorithm_interval, speed_action: bool):
-    class DroneProtocol(IProtocol):
-        current_position: tuple[float, float, float]
-
-        def act(self, action, coordinate_limit: float) -> None:
-            self.provider.tracked_variables['current_action'] = action.tolist()
-
-            direction: float = action[0] * 2 * np.pi
-            
-            if speed_action:
-                speed: float = action[1] * 15
-                command = SetSpeedMobilityCommand(speed)
-                self.provider.send_mobility_command(command)
+    def finish(self) -> None:
+        pass
 
 
-            unit_vector = [np.cos(direction), np.sin(direction)]
+class DroneProtocol(IProtocol):
+    current_position: tuple[float, float, float]
+    speed_action: bool = False
+    algorithm_interval: float = 0.1
 
-            distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
-            distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
+    def act(self, action: List[float], coordinate_limit: float) -> None:
+        self.provider.tracked_variables['current_action'] = list(action)
 
-            # Maintain direction but bound destination within scenario
-            if distance_to_x_edge > 0 and distance_to_y_edge > 0:
-                scale_x = distance_to_x_edge / abs(unit_vector[0])
-                scale_y = distance_to_y_edge / abs(unit_vector[1])
-                scale = min(scale_x, scale_y)
+        direction: float = action[0] * 2 * math.pi
 
-                destination = [
-                    self.current_position[0] + unit_vector[0] * scale,
-                    self.current_position[1] + unit_vector[1] * scale,
-                    0
-                ]
-
-            # If the drone is at the edge of the scenario, prevent it from leaving
-            else:
-                destination = [
-                    self.current_position[0] + unit_vector[0] * 1e5,
-                    self.current_position[1] + unit_vector[1] * 1e5,
-                    0
-                ]
-                # Bound destination within scenario
-                destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
-                destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
-
-            # Start travelling in the direction of travel
-            command = GotoCoordsMobilityCommand(*destination)
+        if self.speed_action:
+            speed: float = action[1] * 15
+            command = SetSpeedMobilityCommand(speed)
             self.provider.send_mobility_command(command)
 
-            if speed_action:
-                self.provider.schedule_timer("", self.provider.current_time() + algorithm_interval - 0.1)
-            else:
-                self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+        unit_vector = [math.cos(direction), math.sin(direction)]
 
-        def initialize(self) -> None:
-            self.current_position = (0, 0, 0)
-            self._collect_packets()
+        distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
+        distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
 
-        def handle_timer(self, timer: str) -> None:
-            self._collect_packets()
-            if not speed_action:
-                self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+        # Maintain direction but bound destination within scenario
+        if distance_to_x_edge > 0 and distance_to_y_edge > 0:
+            scale_x = distance_to_x_edge / (abs(unit_vector[0]) + 1e-10)
+            scale_y = distance_to_y_edge / (abs(unit_vector[1]) + 1e-10)
+            scale = min(scale_x, scale_y)
 
-        def handle_packet(self, message: str) -> None:
-            pass
+            destination = [
+                self.current_position[0] + unit_vector[0] * scale,
+                self.current_position[1] + unit_vector[1] * scale,
+                0
+            ]
 
-        def handle_telemetry(self, telemetry: Telemetry) -> None:
-            self.current_position = telemetry.current_position
+        # If the drone is at the edge of the scenario, prevent it from leaving
+        else:
+            destination = [
+                self.current_position[0] + unit_vector[0] * 1e5,
+                self.current_position[1] + unit_vector[1] * 1e5,
+                0
+            ]
+            # Bound destination within scenario
+            destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
+            destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
 
-        def _collect_packets(self) -> None:
-            command = BroadcastMessageCommand("")
-            self.provider.send_communication_command(command)
+        # Start travelling in the direction of travel
+        command = GotoCoordsMobilityCommand(*destination)
+        self.provider.send_mobility_command(command)
 
+        if self.speed_action:
+            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval - 0.1)
 
-        def finish(self) -> None:
-            pass
+    def initialize(self) -> None:
+        self.current_position = (0, 0, 0)
+        self._collect_packets()
+        if not self.speed_action:
+            self.provider.schedule_timer("", self.provider.current_time() + 0.1)
 
-    return DroneProtocol
+    def handle_timer(self, timer: str) -> None:
+        self._collect_packets()
+        if not self.speed_action:
+            self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+
+    def handle_packet(self, message: str) -> None:
+        pass
+
+    def handle_telemetry(self, telemetry: Telemetry) -> None:
+        self.current_position = telemetry.current_position
+
+    def _collect_packets(self) -> None:
+        command = BroadcastMessageCommand("")
+        self.provider.send_communication_command(command)
+
+    def finish(self) -> None:
+        pass
+
 
 
 class GrADySEnvironment(ParallelEnv):
@@ -507,28 +504,28 @@ class GrADySEnvironment(ParallelEnv):
         builder.add_handler(GrADySHandler())
 
         self.sensor_node_ids = []
+        SensorProtocol.min_priority = self.min_sensor_priority
+        SensorProtocol.max_priority = self.max_sensor_priority
 
         for i in range(self.num_sensors):
-            sensor_protocol = create_sensor(random.uniform(self.min_sensor_priority, self.max_sensor_priority))
-
-            self.sensor_node_ids.append(builder.add_node(sensor_protocol, (
+            self.sensor_node_ids.append(builder.add_node(SensorProtocol, (
                 random.uniform(-self.scenario_size, self.scenario_size),
                 random.uniform(-self.scenario_size, self.scenario_size),
                 0
             )))
 
         self.agent_node_ids = []
+        DroneProtocol.speed_action = self.speed_action
+        DroneProtocol.algorithm_interval = self.algorithm_iteration_interval
         for i in range(self.num_drones):
-            drone_protocol = create_drone_protocol(self.sensor_node_ids, self.algorithm_iteration_interval, self.speed_action)
-
             if self.full_random_drone_position:
-                self.agent_node_ids.append(builder.add_node(drone_protocol, (
+                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
                     random.uniform(-self.scenario_size, self.scenario_size),
                     random.uniform(-self.scenario_size, self.scenario_size),
                     0
                 )))
             else:
-                self.agent_node_ids.append(builder.add_node(drone_protocol, (
+                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
                     random.uniform(-2, 2),
                     random.uniform(-2, 2),
                     0
