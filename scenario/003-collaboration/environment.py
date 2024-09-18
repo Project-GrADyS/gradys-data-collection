@@ -9,20 +9,21 @@ from gradysim.protocol.interface import IProtocol
 from gradysim.protocol.messages.communication import BroadcastMessageCommand
 from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand, SetSpeedMobilityCommand
 from gradysim.protocol.messages.telemetry import Telemetry
+from gradysim.protocol.position import squared_distance
 from gradysim.simulator.event import EventLoop
 from gradysim.simulator.handler.communication import CommunicationHandler, CommunicationMedium
 from gradysim.simulator.handler.interface import INodeHandler
 from gradysim.simulator.handler.mobility import MobilityHandler, MobilityConfiguration
 from gradysim.simulator.handler.timer import TimerHandler
-from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration, VisualizationController
+from gradysim.simulator.handler.visualization import VisualizationHandler, VisualizationConfiguration, \
+    VisualizationController
 from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
-from gradysim.protocol.position import squared_distance
 from gymnasium.spaces import Box
 from pettingzoo import ParallelEnv
 
-
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
+
 
 class SensorProtocol(IProtocol):
     has_collected: bool
@@ -98,7 +99,8 @@ class DroneProtocol(IProtocol):
         self.provider.send_mobility_command(command)
 
         if self.speed_action:
-            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval - 0.1)
+            self.provider.schedule_timer("",
+                                         self.provider.current_time() + self.algorithm_interval - self.algorithm_interval * 0.1)
 
     def initialize(self) -> None:
         self.current_position = (0, 0, 0)
@@ -123,7 +125,6 @@ class DroneProtocol(IProtocol):
 
     def finish(self) -> None:
         pass
-
 
 
 class GrADySEnvironment(ParallelEnv):
@@ -348,7 +349,8 @@ class GrADySEnvironment(ParallelEnv):
             # Select the closest sensors
             closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
             closest_unvisited_sensors.fill(-1)
-            closest_unvisited_sensors[:len(sorted_sensor_indices)] = unvisited_sensor_nodes[sorted_sensor_indices[:self.state_num_closest_sensors]]
+            closest_unvisited_sensors[:len(sorted_sensor_indices)] = unvisited_sensor_nodes[
+                sorted_sensor_indices[:self.state_num_closest_sensors]]
 
             # Calculate distances to all other agents and sort them
             agent_distances = np.linalg.norm(agent_nodes - agent_position, axis=1)
@@ -357,11 +359,14 @@ class GrADySEnvironment(ParallelEnv):
             # Select the closest agents (excluding the agent itself)
             closest_agents = np.zeros((self.state_num_closest_drones, 2))
             closest_agents.fill(-1)
-            closest_agents[:len(sorted_agent_indices) - 1] = agent_nodes[sorted_agent_indices[1:self.state_num_closest_drones + 1]]
+            closest_agents[:len(sorted_agent_indices) - 1] = agent_nodes[
+                sorted_agent_indices[1:self.state_num_closest_drones + 1]]
 
             # Normalize the positions
-            closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(sorted_agent_indices)] + self.scenario_size) / (self.scenario_size * 2)
-            closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(sorted_sensor_indices)] + self.scenario_size) / (self.scenario_size * 2)
+            closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(
+                sorted_agent_indices) - 1] + self.scenario_size) / (self.scenario_size * 2)
+            closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(
+                sorted_sensor_indices)] + self.scenario_size) / (self.scenario_size * 2)
 
             state[f"drone{agent_index}"] = np.concatenate([
                 closest_agents.flatten(),
@@ -639,8 +644,6 @@ class GrADySEnvironment(ParallelEnv):
                     priority = self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.priority
                     reward += priority * (1 - current_timestamp / self.max_episode_length)
 
-
-
         rewards = {
             agent: reward for agent in self.agents
         }
@@ -650,7 +653,7 @@ class GrADySEnvironment(ParallelEnv):
         self.max_reward = max(self.max_reward, *rewards.values())
 
         simulation_ended = (all_sensors_collected and self.end_when_all_collected) or not simulation_ongoing
-        terminations = {agent: simulation_ended  for agent in self.agents}
+        terminations = {agent: simulation_ended for agent in self.agents}
 
         truncations = {agent: False for agent in self.agents}
 
