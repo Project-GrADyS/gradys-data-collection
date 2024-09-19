@@ -1,5 +1,3 @@
-import logging
-import multiprocessing
 import subprocess
 import sys
 import time
@@ -61,11 +59,11 @@ def main():
     actor_sps = [torch.multiprocessing.Value('d', 0.0) for _ in range(coordination_args.num_actors)]
 
     print("MAIN - " "Starting learner process")
-    learner_process: multiprocessing.Process = \
+    learner_process: torch.multiprocessing.Process = \
         ctx.Process(target=execute_learner,
                     args=(learner_step, learner_sps, learner_args, actor_args, experience_args,
-                          logging_args, environment_args, model_args, experience_queue, actor_model_queues,
-                          synchronization_lock))
+                          logging_args, environment_args, model_args, experience_queue,
+                          actor_model_queues, synchronization_lock))
     learner_process.start()
 
     actor_processes = []
@@ -75,7 +73,7 @@ def main():
         actor_process = \
             ctx.Process(target=execute_actor,
                         args=(actor_steps[i], actor_sps[i], i, model_args, actor_args, logging_args, environment_args,
-                              experience_queue, actor_model_queues[i], synchronization_lock))
+                              coordination_args, experience_queue, actor_model_queues[i], synchronization_lock))
         actor_processes.append(actor_process)
         actor_process.start()
 
@@ -127,6 +125,10 @@ MAIN -  Actor model queue sizes: {actor_model_queues_sizes}
                 break
 
             time.sleep(1)
+    except:
+        import traceback
+        traceback.print_exc()
+        raise
     finally:
         terminate_all()
 

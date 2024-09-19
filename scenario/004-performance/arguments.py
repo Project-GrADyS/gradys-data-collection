@@ -97,8 +97,12 @@ class LoggingArgs(Tap):
     exp_name: str = "no_name"
     run_name: str = "no_name"
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.time = time()
+
     def get_path(self):
-        return f"runs/{self.exp_name}/{self.run_name}-{time()}"
+        return f"runs/{self.exp_name}/{self.run_name}-{self.time}"
 
 
 class ModelArgs(Tap):

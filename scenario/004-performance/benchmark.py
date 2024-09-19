@@ -9,13 +9,12 @@ import tyro
 class Args:
     concurrency: int = 3
 
-experiments = []
-for num_actors in [1, 2, 4, 8]:
-    for pypy in [True, False]:
-        experiments.append(["python", "main.py", "--exp_name=bench", f"--run_name='num_actors={num_actors} pypy={pypy}'", f"--num_actors={num_actors}", 
-         f"--use_remote={pypy}", f"--use_pypy={pypy}", f"--total_learning_steps=1000000"])
 
-print("Total experiments: ", len(experiments))
+experiments = [
+["python","main.py","--exp_name","speed_bench","--run_name","pypy","--num_drones","20","--num_sensors","200","--scenario_size","1000","--use_pypy","True","--use_remote","True","--total_learning_steps","10000","--num_actors","7"],
+]
+
+print("Total experiments: ",  len(experiments))
 
 def run_experiment(experiment):
     print("Running experiment: ", experiment)

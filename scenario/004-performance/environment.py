@@ -241,6 +241,15 @@ class GrADySEnvironment(ParallelEnv):
         })
         return {key: np.array(value) for key,value in observations.items()}, rewards, terminations, truncations, infos
 
+    def kill(self):
+        """
+        Kill the remove environment, if it exists. The environment is unusable afterwards
+        """
+        if self.remote_env_process is not None:
+            self.remote_env_process.kill()
+            self.remote_env_process = None
+        self.remote_env = None
+
 
 def make_env(args: EnvironmentArgs, evaluation=False):
     return GrADySEnvironment(

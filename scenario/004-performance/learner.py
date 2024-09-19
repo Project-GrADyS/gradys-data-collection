@@ -1,22 +1,20 @@
-import logging
+
 import time
 from copy import deepcopy
-from typing import Optional
-
-import line_profiler
 import torch
+from line_profiler import line_profiler
 from tensordict import TensorDict
 from torch import optim
 from torch.nn.functional import mse_loss
 from torch.utils.tensorboard import SummaryWriter
 from torchrl.data import ReplayBuffer, LazyTensorStorage
 
-from arguments import LearnerArgs, CoordinationArgs, ExperienceArgs, ActorArgs, LoggingArgs, EnvironmentArgs, ModelArgs
+from arguments import LearnerArgs, ExperienceArgs, ActorArgs, LoggingArgs, EnvironmentArgs, ModelArgs
 from environment import make_env, observation_space_from_args, action_space_from_args
 from heuristics import create_greedy_heuristics, create_random_heuristics
 from model import Actor, Critic
 
-print = lambda *args: args
+# print = lambda *args: args
 
 def evaluate_checkpoint(learner_step: int,
                         writer: SummaryWriter,
@@ -27,7 +25,7 @@ def evaluate_checkpoint(learner_step: int,
                         actor_model: torch.nn.Module,
                         critic_model: torch.nn.Module):
     print("LEARNER - " "Reached checkpoint at step", learner_step)
-    model_path = f"runs/{logging_args.exp_name}/{logging_args.run_name}-checkpoint{learner_step}.cleanrl_model"
+    model_path = f"{logging_args.get_path()}/{logging_args.run_name}-checkpoint{learner_step}.cleanrl_model"
     torch.save((actor_model.state_dict(), critic_model.state_dict()), model_path)
 
     env_args = deepcopy(env_args)
@@ -118,7 +116,6 @@ def evaluate_checkpoint(learner_step: int,
 
     print("Checkpoint evaluation done")
 
-# @line_profiler.profile
 def execute_learner(current_step: torch.multiprocessing.Value,
                     current_sps: torch.multiprocessing.Value,
                     learner_args: LearnerArgs,
@@ -141,15 +138,16 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     action_space = action_space_from_args(environment_args)
 
     device = torch.device("cuda" if learner_args.learner_cuda else "cpu")
+    print("LEARNER - " f"Using device {device}")
 
-    actor_model = Actor(action_space, observation_space, model_args).to(device)
-    critic_model = Critic(action_space, observation_space, environment_args, model_args).to(device)
-    target_actor_model = Actor(action_space, observation_space, model_args).to(device)
-    target_critic_model = Critic(action_space, observation_space, environment_args, model_args).to(device)
+    actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
+    critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
+    target_actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
+    target_critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
     target_actor_model.load_state_dict(actor_model.state_dict())
     target_critic_model.load_state_dict(critic_model.state_dict())
-    critic_optimizer = optim.Adam(list(critic_model.parameters()), lr=learner_args.critic_learning_rate)
-    actor_optimizer = optim.Adam(list(actor_model.parameters()), lr=learner_args.actor_learning_rate)
+    critic_optimizer = optim.Adam(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
+    actor_optimizer = optim.Adam(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
 
     print("LEARNER - " "Sending first models to actors")
     for queue in actor_model_queues:
@@ -157,16 +155,16 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         queue.put(state_dict)
 
     replay_buffer = ReplayBuffer(batch_size=experience_args.batch_size,
-                                 storage=LazyTensorStorage(experience_args.buffer_size))
+                                 storage=LazyTensorStorage(experience_args.buffer_size, device=device))
 
     learning_step = 0
 
     print("LEARNER - " f"Waiting for {learner_args.learning_starts} experiences before starting learning loop")
     while received_experiences < learner_args.learning_starts:
         experience = experience_queue.get()
-
-        replay_buffer.extend(experience)
+        replay_buffer.extend(experience.to(device, non_blocking=True))
         received_experiences += len(experience)
+        print("LEARNER - " f"Waiting for experiences before learning loop starts ({received_experiences}/{learner_args.learning_starts})")
 
     print("LEARNER - " f"Learning loop starting")
     sps_start_time = time.time()
@@ -176,7 +174,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             received = True
             experience = experience_queue.get()
 
-            replay_buffer.extend(experience)
+            replay_buffer.extend(experience.to(device, non_blocking=True))
             received_experiences += len(experience)
         if received:
             print("LEARNER - " f"Receiving experiences at step {learning_step} - new total {received_experiences}")
@@ -185,7 +183,6 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             continue
 
         data: TensorDict = replay_buffer.sample()
-        data = data.to(device)
 
         with torch.no_grad():
             next_actions = target_actor_model(data["next_state"]).view(data["next_state"].shape[0], -1)
@@ -228,14 +225,14 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 writer.add_scalar("learner/critic_loss", qf1_loss.item(), learning_step)
                 writer.add_scalar("learner/actor_loss", actor_loss.item(), learning_step)
 
-                sps = learner_args.learner_statistics_frequency / (time.time() - sps_start_time)
-                writer.add_scalar("learner/sps", sps, learning_step)
-                print("LEARNER - " f"SPS: {sps}; STEP: {learning_step}")
-                sps_start_time = time.time()
+            sps = learner_args.learner_statistics_frequency / (time.time() - sps_start_time)
+            sps_start_time = time.time()
+            writer.add_scalar("learner/sps", sps, learning_step)
+            print("LEARNER - " f"SPS: {sps}; STEP: {learning_step}")
 
-                # Updating shared values
-                current_step.value = learning_step
-                current_sps.value = sps
+            # Updating shared values
+            current_step.value = learning_step
+            current_sps.value = sps
 
         if learner_args.checkpoints and learning_step % learner_args.checkpoint_freq == 0:
             evaluate_checkpoint(
