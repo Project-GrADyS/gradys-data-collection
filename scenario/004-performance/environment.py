@@ -147,7 +147,7 @@ class GrADySEnvironment(ParallelEnv):
 
         # print("Iniciando servidor com comando:")
         # print(command_args)
-
+        self.remote_env_process = None
         if use_remote:
             # Launch the remote environment process
             self.remote_env_process = subprocess.Popen(command_args, stderr=sys.stderr, stdout=subprocess.PIPE)

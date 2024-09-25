@@ -5,12 +5,14 @@ import math
 import numpy as np
 import torch
 from tensordict import TensorDict
+from torch.nn.functional import mse_loss
 from torch.utils.tensorboard import SummaryWriter
 
-from arguments import ActorArgs, EnvironmentArgs, LoggingArgs, ModelArgs, CoordinationArgs
+from arguments import ActorArgs, EnvironmentArgs, LoggingArgs, ModelArgs, CoordinationArgs, LearnerArgs
 from environment import action_space_from_args, observation_space_from_args, make_env
 from heuristics import create_greedy_heuristics, create_random_heuristics
-from model import Actor
+from model import Actor, Critic
+
 
 # print = lambda *args: args
 
@@ -20,10 +22,11 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                   actor_id: int,
                   model_args: ModelArgs,
                   actor_args: ActorArgs,
+                  learner_args: LearnerArgs,
                   logging_args: LoggingArgs,
                   environment_args: EnvironmentArgs,
                   coordination_args: CoordinationArgs,
-                  experience_queue: torch.multiprocessing.Queue,
+                  experience_queue: torch.multiprocessing.JoinableQueue,
                   model_queue: torch.multiprocessing.Queue,
                   start_lock: torch.multiprocessing.Barrier):
     total_process_count = os.cpu_count()
@@ -41,11 +44,20 @@ def execute_actor(current_step: torch.multiprocessing.Value,
     print(f"ACTOR {actor_id} - " f"Using device {device}")
 
     actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
+    target_actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
+    critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
+    target_critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
 
-    state_dict = model_queue.get()
+    critic_state_dict, target_critic_state_dict, actor_state_dict, target_actor_state_dict = model_queue.get()
     print(f"ACTOR {actor_id} - " "Received first model")
-    actor_model.load_state_dict(state_dict)
-    del state_dict
+    critic_model.load_state_dict(critic_state_dict)
+    target_critic_model.load_state_dict(target_critic_state_dict)
+    actor_model.load_state_dict(actor_state_dict)
+    target_actor_model.load_state_dict(target_actor_state_dict)
+    del critic_state_dict
+    del target_critic_state_dict
+    del actor_state_dict
+    del target_actor_state_dict
 
     sample = TensorDict({
         "state": np.stack([observation_space.sample() for _ in range(environment_args.num_drones)]),
@@ -53,6 +65,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         "reward": torch.rand(1),
         "next_state": np.stack([observation_space.sample() for _ in range(environment_args.num_drones)]),
         "done": torch.rand(1),
+        "priority": torch.rand(1),
     })
     buffer = sample.expand(actor_args.experience_buffer_size)
     buffer = buffer.clone()
@@ -87,12 +100,19 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         action_step = 0
         while True:
             action_step += 1
+
             # Update model if available
             if not model_queue.empty():
-                received_state_dict = model_queue.get()
-                actor_model.load_state_dict(received_state_dict)
-                # print(f"ACTOR {actor_id} - " f"Updating model at step {action_step}")
-                del received_state_dict
+                critic_state_dict, target_critic_state_dict, actor_state_dict, target_actor_state_dict = model_queue.get()
+                critic_model.load_state_dict(critic_state_dict)
+                target_critic_model.load_state_dict(target_critic_state_dict)
+                actor_model.load_state_dict(actor_state_dict)
+                target_actor_model.load_state_dict(target_actor_state_dict)
+                del critic_state_dict
+                del target_critic_state_dict
+                del actor_state_dict
+                del target_actor_state_dict
+
             if terminated:
                 obs, _ = env.reset()
                 terminated = False
@@ -138,6 +158,20 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 all_collected_count += info["all_collected"]
 
             all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
+            reward = torch.tensor(rewards[env.agents[0]]).to(device)
+            done = torch.tensor(int(terminations[env.agents[0]])).to(device)
+
+            # Estimating TD error for prioritized experience replay
+            all_next_obs = torch.tensor(all_agent_next_obs, dtype=torch.float32).to(device)
+            next_actions = target_actor_model(all_next_obs).view(1, -1)
+            next_state = torch.tensor(all_agent_next_obs.reshape(1, -1), dtype=torch.float32).to(device)
+            qf1_next_target = target_critic_model(next_state, next_actions)
+            next_q_value = reward.flatten() + (1 - done.flatten()) * learner_args.gamma * (
+                qf1_next_target).view(1, -1)
+            current_state = torch.tensor(all_agent_obs.reshape(1, -1), dtype=torch.float32).to(device)
+            all_current_actions = torch.tensor(all_agent_actions.reshape(1, -1), dtype=torch.float32).to(device)
+            qf1_a_values = critic_model(current_state, all_current_actions).view(1, -1)
+            qf1_loss = mse_loss(qf1_a_values, next_q_value)
 
             buffer[cursor] = TensorDict({
                 "state": all_agent_obs,
@@ -145,6 +179,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 "reward": rewards[env.agents[0]],
                 "next_state": all_agent_next_obs,
                 "done": int(terminations[env.agents[0]]),
+                "priority": qf1_loss.item(),
             })
             cursor += 1
 
@@ -154,6 +189,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
             if cursor >= actor_args.experience_buffer_size:
                 print(f"ACTOR {actor_id} - " f"Sending buffer at step {action_step}")
                 experience_queue.put(buffer)
+                experience_queue.join()
                 buffer.zero_()
                 cursor = 0
 

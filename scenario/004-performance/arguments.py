@@ -33,7 +33,7 @@ class EnvironmentArgs(Tap):
     communication_range: float = 20
     render_mode: Optional[str] = None
 
-    reward: Literal['punish', 'time-reward', 'reward'] = 'time-reward'
+    reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
     speed_action: bool = True
     use_remote: bool = False
     use_pypy: bool = False
@@ -51,7 +51,7 @@ class ActorArgs(Tap):
     def __init__(self):
         Tap.__init__(self, explicit_bool=True)
 
-    experience_buffer_size: int = 1000
+    experience_buffer_size: int = 10_000
     """the actor will accumulate this many experiences before sending them to the central experience replay"""
     use_heuristics: Literal['greedy', 'random', ''] = ''
     actor_use_cuda: bool = False
@@ -82,7 +82,7 @@ class LearnerArgs(Tap):
     learner_statistics_frequency: int = 10_000
     checkpoints: bool = True
     """whether to save model checkpoints"""
-    checkpoint_freq: int = 1_000_000
+    checkpoint_freq: int = 10_000
     """the frequency of checkpoints"""
     checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""

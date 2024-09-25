@@ -7,7 +7,7 @@ from tensordict import TensorDict
 from torch import optim
 from torch.nn.functional import mse_loss
 from torch.utils.tensorboard import SummaryWriter
-from torchrl.data import ReplayBuffer, LazyTensorStorage
+from torchrl.data import ReplayBuffer, LazyTensorStorage, PrioritizedSampler, TensorDictReplayBuffer
 
 from arguments import LearnerArgs, ExperienceArgs, ActorArgs, LoggingArgs, EnvironmentArgs, ModelArgs
 from environment import make_env, observation_space_from_args, action_space_from_args
@@ -124,7 +124,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                     logging_args: LoggingArgs,
                     environment_args: EnvironmentArgs,
                     model_args: ModelArgs,
-                    experience_queue: torch.multiprocessing.Queue,
+                    experience_queue: torch.multiprocessing.JoinableQueue,
                     actor_model_queues: list[torch.multiprocessing.Queue],
                     start_lock: torch.multiprocessing.Barrier):
     print("LEARNER " "Learner ready, awaiting lock release...")
@@ -141,9 +141,13 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     print("LEARNER - " f"Using device {device}")
 
     actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
+    actor_model.share_memory()
     critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
+    critic_model.share_memory()
     target_actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
+    target_actor_model.share_memory()
     target_critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
+    target_critic_model.share_memory()
     target_actor_model.load_state_dict(actor_model.state_dict())
     target_critic_model.load_state_dict(critic_model.state_dict())
     critic_optimizer = optim.Adam(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
@@ -151,19 +155,23 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
     print("LEARNER - " "Sending first models to actors")
     for queue in actor_model_queues:
-        state_dict = actor_model.state_dict()
-        queue.put(state_dict)
+        queue.put((critic_model.state_dict(), target_critic_model.state_dict(), actor_model.state_dict(), target_actor_model.state_dict()))
 
-    replay_buffer = ReplayBuffer(batch_size=experience_args.batch_size,
-                                 storage=LazyTensorStorage(experience_args.buffer_size, device=device))
+    replay_buffer = TensorDictReplayBuffer(batch_size=experience_args.batch_size,
+                                           storage=LazyTensorStorage(experience_args.buffer_size, device=device),
+                                           sampler=PrioritizedSampler(experience_args.buffer_size, alpha=0.8, beta=1.1),
+                                           priority_key="priority")
 
     learning_step = 0
 
     print("LEARNER - " f"Waiting for {learner_args.learning_starts} experiences before starting learning loop")
     while received_experiences < learner_args.learning_starts:
         experience = experience_queue.get()
-        replay_buffer.extend(experience.to(device, non_blocking=True))
-        received_experiences += len(experience)
+        experience_clone = experience.clone().to(device)
+        del experience
+        replay_buffer.extend(experience_clone)
+        experience_queue.task_done()
+        received_experiences += len(experience_clone)
         print("LEARNER - " f"Waiting for experiences before learning loop starts ({received_experiences}/{learner_args.learning_starts})")
 
     print("LEARNER - " f"Learning loop starting")
@@ -173,9 +181,13 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         while not experience_queue.empty():
             received = True
             experience = experience_queue.get()
+            experience_clone = experience.clone().to(device)
+            del experience
 
-            replay_buffer.extend(experience.to(device, non_blocking=True))
-            received_experiences += len(experience)
+            replay_buffer.extend(experience_clone.to(device, non_blocking=True))
+
+            experience_queue.task_done()
+            received_experiences += len(experience_clone)
         if received:
             print("LEARNER - " f"Receiving experiences at step {learning_step} - new total {received_experiences}")
 
@@ -195,6 +207,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         all_actions = data["actions"].reshape(data["actions"].shape[0], -1)
         qf1_a_values = critic_model(current_state, all_actions).view(-1)
         qf1_loss = mse_loss(qf1_a_values, next_q_value)
+
+        data["priority"] = qf1_loss.expand(experience_args.batch_size)
 
         # optimize the model
         critic_optimizer.zero_grad()
@@ -217,7 +231,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         if learning_step % learner_args.actor_model_upload_frequency == 0:
             print("LEARNER - " f"Uploading actor model at step {learning_step}")
             for actor_model_queue in actor_model_queues:
-                actor_model_queue.put(actor_model.state_dict())
+                actor_model_queue.put((critic_model.state_dict(), target_critic_model.state_dict(), actor_model.state_dict(), target_actor_model.state_dict()))
 
         if learning_step % learner_args.learner_statistics_frequency == 0:
             if not actor_args.use_heuristics:

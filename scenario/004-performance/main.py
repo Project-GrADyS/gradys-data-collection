@@ -51,7 +51,7 @@ def main():
     synchronization_lock = ctx.Barrier(2 + coordination_args.num_actors)
 
     actor_model_queues = [ctx.Queue() for _ in range(coordination_args.num_actors)]
-    experience_queue = ctx.Queue()
+    experience_queue = ctx.JoinableQueue()
 
     learner_step = torch.multiprocessing.Value('i', 0)
     learner_sps = torch.multiprocessing.Value('d', 0.0)
@@ -72,7 +72,7 @@ def main():
 
         actor_process = \
             ctx.Process(target=execute_actor,
-                        args=(actor_steps[i], actor_sps[i], i, model_args, actor_args, logging_args, environment_args,
+                        args=(actor_steps[i], actor_sps[i], i, model_args, actor_args, learner_args, logging_args, environment_args,
                               coordination_args, experience_queue, actor_model_queues[i], synchronization_lock))
         actor_processes.append(actor_process)
         actor_process.start()
@@ -121,7 +121,7 @@ MAIN -  Actor model queue sizes: {actor_model_queues_sizes}
             """
             print(main_status_string)
 
-            if not learner_process.is_alive():
+            if len(dead_processes) > 0:
                 break
 
             time.sleep(1)
