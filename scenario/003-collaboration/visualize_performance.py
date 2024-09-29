@@ -7,15 +7,15 @@ import torch
 
 # Loading the model
 models = [
-    (2, 12, "runs/results__a_2-s_12__1__1723034080/a_2-s_12-checkpoint4999.cleanrl_model"),
-    (2, 24, "runs/results__a_2-s_24__1__1723034081/a_2-s_24-checkpoint4999.cleanrl_model"),
-    (2, 36, "runs/results__a_2-s_36__1__1723034081/a_2-s_36-checkpoint4999.cleanrl_model"),
-    (4, 12, "runs/results__a_4-s_12__1__1723034081/a_4-s_12-checkpoint4999.cleanrl_model"),
-    (4, 24, "runs/results__a_4-s_24__1__1723034081/a_4-s_24-checkpoint4999.cleanrl_model"),
-    (4, 36, "runs/results__a_4-s_36__1__1723034081/a_4-s_36-checkpoint4999.cleanrl_model"),
-    (8, 12, "runs/results__a_8-s_12__1__1723034081/a_8-s_12-checkpoint1740.cleanrl_model"),
-    (8, 24, "runs/results__a_8-s_24__1__1723034081/a_8-s_24-checkpoint4999.cleanrl_model"),
-    (8, 36, "runs/results__a_8-s_36__1__1723034081/a_8-s_36-checkpoint4999.cleanrl_model"),
+    (2, 12, "runs/results/results__a_2-s_12__1__1723034080/a_2-s_12-checkpoint4999.cleanrl_model"),
+    (2, 24, "runs/results/results__a_2-s_24__1__1723034081/a_2-s_24-checkpoint4999.cleanrl_model"),
+    (2, 36, "runs/results/results__a_2-s_36__1__1723034081/a_2-s_36-checkpoint4999.cleanrl_model"),
+    (4, 12, "runs/results/results__a_4-s_12__1__1723034081/a_4-s_12-checkpoint4999.cleanrl_model"),
+    (4, 24, "runs/results/results__a_4-s_24__1__1723034081/a_4-s_24-checkpoint4999.cleanrl_model"),
+    (4, 36, "runs/results/results__a_4-s_36__1__1723034081/a_4-s_36-checkpoint4999.cleanrl_model"),
+    (8, 12, "runs/results/results__a_8-s_12__1__1726583488/a_8-s_12-checkpoint4999.cleanrl_model"),
+    (8, 24, "runs/results/results__a_8-s_24__1__1723034081/a_8-s_24-checkpoint4999.cleanrl_model"),
+    (8, 36, "runs/results/results__a_8-s_36__1__1723034081/a_8-s_36-checkpoint4999.cleanrl_model"),
 ]
 
 completion_times = []
@@ -45,7 +45,7 @@ for num_agents, num_sensors, model_path in models:
 
     completion_time_sum = 0
 
-    total_runs = 200
+    total_runs = 500
     for i in range(total_runs):
         if i % 100 == 0:
             print(f"Running maddpg: repetition {i}/{total_runs}")
