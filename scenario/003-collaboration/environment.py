@@ -99,8 +99,7 @@ class DroneProtocol(IProtocol):
         self.provider.send_mobility_command(command)
 
         if self.speed_action:
-            self.provider.schedule_timer("",
-                                         self.provider.current_time() + self.algorithm_interval - self.algorithm_interval * 0.1)
+            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.99)
 
     def initialize(self) -> None:
         self.current_position = (0, 0, 0)
