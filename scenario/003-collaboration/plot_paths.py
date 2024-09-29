@@ -44,7 +44,7 @@ models = [
     (4, 12, "runs/results/results__a_4-s_12__1__1723034081/a_4-s_12-checkpoint4999.cleanrl_model"),
     (4, 24, "runs/results/results__a_4-s_24__1__1723034081/a_4-s_24-checkpoint4999.cleanrl_model"),
     (4, 36, "runs/results/results__a_4-s_36__1__1723034081/a_4-s_36-checkpoint4999.cleanrl_model"),
-    (8, 12, "runs/results/results__a_8-s_12__1__1723034081/a_8-s_12-checkpoint1740.cleanrl_model"),
+    (8, 12, "runs/results/results__a_8-s_12__1__1726583488/a_8-s_12-checkpoint4999.cleanrl_model"),
     (8, 24, "runs/results/results__a_8-s_24__1__1723034081/a_8-s_24-checkpoint4999.cleanrl_model"),
     (8, 36, "runs/results/results__a_8-s_36__1__1723034081/a_8-s_36-checkpoint4999.cleanrl_model"),
 ]
