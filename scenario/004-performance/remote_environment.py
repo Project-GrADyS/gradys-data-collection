@@ -321,11 +321,12 @@ class GradysRemoteEnvironment:
         unvisited_sensor_nodes = np.array([self.simulator.get_node(sensor_id).position[:2]
                                            for sensor_id in self.sensor_node_ids
                                            if not self.simulator.get_node(sensor_id) \
-                                            .protocol_encapsulator.protocol.has_collected])
+                                            .protocol_encapsulator.protocol.has_collected]).reshape((-1, 2))
         sensor_kd_tree = KDTree(unvisited_sensor_nodes)
 
 
-        agent_nodes = np.array([self.simulator.get_node(agent_id).position[:2] for agent_id in self.agent_node_ids])
+        agent_nodes = np.array([self.simulator.get_node(agent_id).position[:2]
+                                for agent_id in self.agent_node_ids]).reshape((-1, 2))
         agent_kd_tree = KDTree(agent_nodes)
 
         closest_sensor_count = min(self.state_num_closest_sensors, len(unvisited_sensor_nodes))
@@ -334,13 +335,19 @@ class GradysRemoteEnvironment:
         agent_nodes_reshaped = agent_nodes.reshape((self.num_drones, 1, 2))
 
         # Calculating closest nodes to all agents
-        _, all_closest_sensors = sensor_kd_tree.query(agent_nodes, closest_sensor_count)
-        all_closest_sensors = all_closest_sensors.reshape((self.num_drones, closest_sensor_count))
-        _, all_closest_agents = agent_kd_tree.query(agent_nodes, list(range(2, closest_agent_count+2)))
-        all_closest_agents = all_closest_agents.reshape((self.num_drones, closest_agent_count))
+        if closest_sensor_count > 0:
+            _, all_closest_sensors = sensor_kd_tree.query(agent_nodes, closest_sensor_count)
+            all_closest_sensors = all_closest_sensors.reshape((self.num_drones, closest_sensor_count))
+            closest_unvisited_sensors = unvisited_sensor_nodes[all_closest_sensors]
+        else:
+            closest_unvisited_sensors = np.array([]).reshape((self.num_drones, 0, 2))
+        if closest_agent_count > 0:
+            _, all_closest_agents = agent_kd_tree.query(agent_nodes, list(range(2, closest_agent_count+2)))
+            all_closest_agents = all_closest_agents.reshape((self.num_drones, closest_agent_count))
+            closest_agents = agent_nodes[all_closest_agents]
+        else:
+            closest_agents = np.array([]).reshape((self.num_drones, 0, 2))
 
-        # Collecting the closest sensor coordinates
-        closest_unvisited_sensors = unvisited_sensor_nodes[all_closest_sensors]
         # Normalizing sensor positions
         closest_unvisited_sensors *= -1
         closest_unvisited_sensors += agent_nodes_reshaped
@@ -348,7 +355,6 @@ class GradysRemoteEnvironment:
         closest_unvisited_sensors /= float(self.scenario_size * 2)
 
         # Collecting the closest agent coordinates
-        closest_agents = agent_nodes[all_closest_agents]
         # Normalizing agent positions
         closest_agents *= -1
         closest_agents += agent_nodes_reshaped
