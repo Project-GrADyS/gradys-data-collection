@@ -6,7 +6,7 @@ from arguments import EnvironmentArgs, ModelArgs
 
 torch.backends.cuda.matmul.allow_tf32 = True
 
-class Critic(torch.jit.ScriptModule):
+class Critic(nn.Module):
     def __init__(self, action_space_size, observation_space_size, env_args: EnvironmentArgs, args: ModelArgs):
         super().__init__()
         self.fc1 = nn.Linear(
@@ -14,7 +14,6 @@ class Critic(torch.jit.ScriptModule):
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, 1)
 
-    @torch.jit.script_method
     def forward(self, x, a):
         x = torch.cat([x, a], 1)
         x = F.relu(self.fc1(x))
@@ -22,8 +21,7 @@ class Critic(torch.jit.ScriptModule):
         x = self.fc3(x)
         return x
 
-
-class Actor(torch.jit.ScriptModule):
+class Actor(nn.Module):
     def __init__(self, action_space_size, observation_space_size, args: ModelArgs):
         super().__init__()
         self.fc1 = nn.Linear(observation_space_size, args.actor_model_size)
@@ -37,7 +35,6 @@ class Actor(torch.jit.ScriptModule):
             "action_bias", torch.tensor((1 + 0) / 2.0, dtype=torch.float32)
         )
 
-    @torch.jit.script_method
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
