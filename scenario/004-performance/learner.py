@@ -116,6 +116,9 @@ def evaluate_checkpoint(learner_step: int,
 
     print("Checkpoint evaluation done")
 
+def state_dict_to_cpu(state_dict):
+    return {k: v.cpu() for k, v in state_dict.items()}
+
 def execute_learner(current_step: torch.multiprocessing.Value,
                     current_sps: torch.multiprocessing.Value,
                     learner_args: LearnerArgs,
@@ -153,9 +156,18 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     critic_optimizer = optim.Adam(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
     actor_optimizer = optim.Adam(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
 
+    def upload_models():
+        critic_state_dict = state_dict_to_cpu(critic_model.state_dict())
+        target_critic_state_dict = state_dict_to_cpu(target_critic_model.state_dict())
+        actor_state_dict = state_dict_to_cpu(actor_model.state_dict())
+        target_actor_state_dict = state_dict_to_cpu(target_actor_model.state_dict())
+
+        for queue in actor_model_queues:
+            queue.put((critic_state_dict, target_critic_state_dict, actor_state_dict, target_actor_state_dict))
+
+
     print("LEARNER - " "Sending first models to actors")
-    for queue in actor_model_queues:
-        queue.put((critic_model.state_dict(), target_critic_model.state_dict(), actor_model.state_dict(), target_actor_model.state_dict()))
+    upload_models()
 
     replay_buffer = TensorDictReplayBuffer(batch_size=experience_args.batch_size,
                                            storage=LazyTensorStorage(experience_args.buffer_size, device=device),
@@ -230,8 +242,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
         if learning_step % learner_args.actor_model_upload_frequency == 0:
             print("LEARNER - " f"Uploading actor model at step {learning_step}")
-            for actor_model_queue in actor_model_queues:
-                actor_model_queue.put((critic_model.state_dict(), target_critic_model.state_dict(), actor_model.state_dict(), target_actor_model.state_dict()))
+            upload_models()
 
         if learning_step % learner_args.learner_statistics_frequency == 0:
             if not actor_args.use_heuristics:

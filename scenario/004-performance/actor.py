@@ -13,8 +13,16 @@ from environment import action_space_from_args, observation_space_from_args, mak
 from heuristics import create_greedy_heuristics, create_random_heuristics
 from model import Actor, Critic
 
-
 # print = lambda *args: args
+
+def clone_state_dict(state_dict: dict):
+    cloned_dict = {}
+    while state_dict:
+        key, value = state_dict.popitem()
+        cloned_dict[key] = value.clone()
+
+    return cloned_dict
+
 
 @torch.no_grad()
 def execute_actor(current_step: torch.multiprocessing.Value,
@@ -48,16 +56,19 @@ def execute_actor(current_step: torch.multiprocessing.Value,
     critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
     target_critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
 
-    critic_state_dict, target_critic_state_dict, actor_state_dict, target_actor_state_dict = model_queue.get()
+    def receive_models():
+        critic_state_dict, target_critic_state_dict, actor_state_dict, target_actor_state_dict = model_queue.get()
+        critic_model.load_state_dict(clone_state_dict(critic_state_dict))
+        target_critic_model.load_state_dict(clone_state_dict(target_critic_state_dict))
+        actor_model.load_state_dict(clone_state_dict(actor_state_dict))
+        target_actor_model.load_state_dict(clone_state_dict(target_actor_state_dict))
+        del critic_state_dict
+        del target_critic_state_dict
+        del actor_state_dict
+        del target_actor_state_dict
+
     print(f"ACTOR {actor_id} - " "Received first model")
-    critic_model.load_state_dict(critic_state_dict)
-    target_critic_model.load_state_dict(target_critic_state_dict)
-    actor_model.load_state_dict(actor_state_dict)
-    target_actor_model.load_state_dict(target_actor_state_dict)
-    del critic_state_dict
-    del target_critic_state_dict
-    del actor_state_dict
-    del target_actor_state_dict
+    receive_models()
 
     sample = TensorDict({
         "state": np.stack([observation_space.sample() for _ in range(environment_args.num_drones)]),
@@ -103,15 +114,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
 
             # Update model if available
             if not model_queue.empty():
-                critic_state_dict, target_critic_state_dict, actor_state_dict, target_actor_state_dict = model_queue.get()
-                critic_model.load_state_dict(critic_state_dict)
-                target_critic_model.load_state_dict(target_critic_state_dict)
-                actor_model.load_state_dict(actor_state_dict)
-                target_actor_model.load_state_dict(target_actor_state_dict)
-                del critic_state_dict
-                del target_critic_state_dict
-                del actor_state_dict
-                del target_actor_state_dict
+                receive_models()
 
             if terminated:
                 obs, _ = env.reset()
