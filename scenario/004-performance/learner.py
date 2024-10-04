@@ -235,14 +235,15 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         replay_buffer.update_tensordict_priority(data)
 
         # optimize the model
-        critic_optimizer.zero_grad()
+        critic_optimizer.zero_grad(set_to_none=True)
         qf1_loss.backward()
         critic_optimizer.step()
 
-        actor_actions = actor_model(data["state"]).view(data["state"].shape[0], -1)
-        actor_loss = -critic_model(current_state, actor_actions).mean()
         if learning_step % learner_args.policy_frequency == 0:
-            actor_optimizer.zero_grad()
+            actor_actions = actor_model(data["state"]).view(data["state"].shape[0], -1)
+            actor_loss = -critic_model(current_state, actor_actions).mean()
+
+            actor_optimizer.zero_grad(set_to_none=True)
             actor_loss.backward()
             actor_optimizer.step()
 
