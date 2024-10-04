@@ -153,13 +153,15 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     print("LEARNER - " f"Using device {device}")
 
     actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
-    actor_model.share_memory()
     critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
-    critic_model.share_memory()
     target_actor_model = Actor(action_space.shape[0], observation_space.shape[0], model_args).to(device)
-    target_actor_model.share_memory()
     target_critic_model = Critic(action_space.shape[0], observation_space.shape[0], environment_args, model_args).to(device)
-    target_critic_model.share_memory()
+
+    actor_model.compile(backend='cudagraphs')
+    critic_model.compile(backend='cudagraphs')
+    target_actor_model.compile(backend='cudagraphs')
+    target_critic_model.compile(backend='cudagraphs')
+
     target_actor_model.load_state_dict(actor_model.state_dict())
     target_critic_model.load_state_dict(critic_model.state_dict())
     critic_optimizer = optim.Adam(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
