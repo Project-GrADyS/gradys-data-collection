@@ -22,15 +22,24 @@ def evaluate_checkpoint(learner_step: int,
                         logging_args: LoggingArgs,
                         env_args: EnvironmentArgs,
                         actor_args: ActorArgs,
-                        actor_model: torch.nn.Module,
-                        critic_model: torch.nn.Module):
+                        actor_model_dict: dict,
+                        critic_model_dict: dict):
     print("LEARNER - " "Reached checkpoint at step", learner_step)
     model_path = f"{logging_args.get_path()}/{logging_args.run_name}-checkpoint{learner_step}.cleanrl_model"
-    torch.save((actor_model.state_dict(), critic_model.state_dict()), model_path)
+    torch.save((actor_model_dict, critic_model_dict), model_path)
 
     env_args = deepcopy(env_args)
     env_args.use_remote = False
     temp_env = make_env(env_args, True)
+
+    action_space = action_space_from_args(env_args)
+    observation_space = observation_space_from_args(env_args)
+
+    actor_model = Actor(action_space.shape[0], observation_space.shape[0], ModelArgs()).to(device)
+    critic_model = Critic(action_space.shape[0], observation_space.shape[0], env_args, ModelArgs()).to(device)
+
+    actor_model.load_state_dict(actor_model_dict)
+    critic_model.load_state_dict(critic_model_dict)
 
     actor_model.eval()
     critic_model.eval()
@@ -50,10 +59,10 @@ def evaluate_checkpoint(learner_step: int,
         heuristics = create_random_heuristics(env_args.state_num_closest_drones,
                                               env_args.state_num_closest_sensors)
 
-    evaluation_runs = 200
+    evaluation_runs = 50
     for i in range(evaluation_runs):
-        if i % 100 == 0:
-            print(f"Evaluating model ({i + 1}/{evaluation_runs})")
+        if i % 10 == 0:
+            print("LEARNER - "f"Evaluating model ({i}/{evaluation_runs})")
         temp_obs, _ = temp_env.reset()
         while True:
             actions = {}
@@ -267,8 +276,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 logging_args,
                 environment_args,
                 actor_args,
-                actor_model,
-                critic_model
+                actor_model.state_dict(),
+                critic_model.state_dict()
             )
 
     evaluate_checkpoint(
@@ -278,8 +287,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         logging_args,
         environment_args,
         actor_args,
-        actor_model,
-        critic_model
+        actor_model.state_dict(),
+        critic_model.state_dict()
     )
     print("LEARNER - " f"Finished learning at step {learning_step}")
     writer.close()
