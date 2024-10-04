@@ -183,6 +183,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     replay_buffer = TensorDictReplayBuffer(batch_size=experience_args.batch_size,
                                            storage=LazyTensorStorage(experience_args.buffer_size, device=device),
                                            sampler=PrioritizedSampler(experience_args.buffer_size, alpha=0.8, beta=1.1),
+                                           prefetch=10,
                                            priority_key="priority")
 
     learning_step = 0
@@ -190,7 +191,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     print("LEARNER - " f"Waiting for {learner_args.learning_starts} experiences before starting learning loop")
     while received_experiences < learner_args.learning_starts:
         experience = experience_queue.get()
-        experience_clone = experience.clone().to(device)
+        experience_clone = experience.to(device)
         del experience
         replay_buffer.extend(experience_clone)
         experience_queue.task_done()
@@ -207,7 +208,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             experience_clone = experience.clone().to(device)
             del experience
 
-            replay_buffer.extend(experience_clone.to(device, non_blocking=True))
+            replay_buffer.extend(experience_clone.to(device))
 
             experience_queue.task_done()
             received_experiences += len(experience_clone)
@@ -217,7 +218,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         if received_experiences < learner_args.learning_starts or actor_args.use_heuristics:
             continue
 
-        data: TensorDict = replay_buffer.sample()
+        data: TensorDict = replay_buffer.sample().to(device)
 
         with torch.no_grad():
             next_actions = target_actor_model(data["next_state"]).view(data["next_state"].shape[0], -1)
@@ -231,6 +232,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         qf1_loss = mse_loss(qf1_a_values, next_q_value)
 
         data["priority"] = qf1_loss.expand(experience_args.batch_size)
+        replay_buffer.update_tensordict_priority(data)
 
         # optimize the model
         critic_optimizer.zero_grad()
