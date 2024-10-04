@@ -82,7 +82,7 @@ class LearnerArgs(Tap):
     learner_statistics_frequency: int = 10_000
     checkpoints: bool = True
     """whether to save model checkpoints"""
-    checkpoint_freq: int = 10_000
+    checkpoint_freq: int = 100_000
     """the frequency of checkpoints"""
     checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""

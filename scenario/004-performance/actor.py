@@ -38,7 +38,9 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                   model_queue: torch.multiprocessing.Queue,
                   start_lock: torch.multiprocessing.Barrier):
     total_process_count = os.cpu_count()
-    torch.set_num_threads(math.floor(total_process_count / coordination_args.num_actors))
+    # +1 for the learner
+    torch.set_num_threads(math.floor(total_process_count / (coordination_args.num_actors + 1)))
+    print(f"ACTOR {actor_id} - " f"Using {torch.get_num_threads()} threads")
 
     writer = SummaryWriter(logging_args.get_path())
 
@@ -237,12 +239,12 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 current_step.value = action_step
                 current_sps.value = sps
 
-        print(f"ACTOR {actor_id} - " f"Finished training at step {action_step}")
     except:
         import traceback
         traceback.print_exc()
         raise
     finally:
+        print(f"ACTOR {actor_id} - " f"Finished training at step {action_step}")
         env.close()
         env.kill()
         writer.close()

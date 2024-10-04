@@ -1,21 +1,21 @@
-
+import os
 import time
 from copy import deepcopy
+
+import math
 import torch
-from line_profiler import line_profiler
-from tensordict import TensorDict
+from tensordict import TensorDictBase
 from torch import optim
 from torch.nn.functional import mse_loss
 from torch.utils.tensorboard import SummaryWriter
-from torchrl.data import ReplayBuffer, LazyTensorStorage, PrioritizedSampler, TensorDictReplayBuffer
+from torchrl.data import LazyTensorStorage, PrioritizedSampler, TensorDictReplayBuffer
 
-from arguments import LearnerArgs, ExperienceArgs, ActorArgs, LoggingArgs, EnvironmentArgs, ModelArgs
+from arguments import LearnerArgs, ExperienceArgs, ActorArgs, LoggingArgs, EnvironmentArgs, ModelArgs, CoordinationArgs
 from environment import make_env, observation_space_from_args, action_space_from_args
 from heuristics import create_greedy_heuristics, create_random_heuristics
 from model import Actor, Critic
 
 # print = lambda *args: args
-
 def evaluate_checkpoint(learner_step: int,
                         writer: SummaryWriter,
                         device: torch.device,
@@ -136,9 +136,19 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                     logging_args: LoggingArgs,
                     environment_args: EnvironmentArgs,
                     model_args: ModelArgs,
+                    coordination_args: CoordinationArgs,
                     experience_queue: torch.multiprocessing.JoinableQueue,
                     actor_model_queues: list[torch.multiprocessing.Queue],
                     start_lock: torch.multiprocessing.Barrier):
+    total_process_count = os.cpu_count()
+    total_threads = coordination_args.num_actors + 1
+    # Learner gets the same amount of threads as the actor but also gets the remainer
+    torch.set_num_threads(
+        math.ceil(total_process_count / total_threads) + total_process_count % total_threads
+    )
+    print("LEARNER - " f"Using {torch.get_num_threads()} threads")
+
+
     print("LEARNER " "Learner ready, awaiting lock release...")
     start_lock.wait()
 
@@ -164,8 +174,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
     target_actor_model.load_state_dict(actor_model.state_dict())
     target_critic_model.load_state_dict(critic_model.state_dict())
-    critic_optimizer = optim.Adam(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
-    actor_optimizer = optim.Adam(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
+    critic_optimizer = optim.AdamW(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
+    actor_optimizer = optim.AdamW(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
 
     def upload_models():
         critic_state_dict = state_dict_to_cpu(critic_model.state_dict())
@@ -186,7 +196,6 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                                            prefetch=10,
                                            priority_key="priority")
 
-    learning_step = 0
 
     print("LEARNER - " f"Waiting for {learner_args.learning_starts} experiences before starting learning loop")
     while received_experiences < learner_args.learning_starts:
@@ -218,7 +227,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         if received_experiences < learner_args.learning_starts or actor_args.use_heuristics:
             continue
 
-        data: TensorDict = replay_buffer.sample().to(device)
+        data: TensorDictBase = replay_buffer.sample().to(device)
 
         with torch.no_grad():
             next_actions = target_actor_model(data["next_state"]).view(data["next_state"].shape[0], -1)
@@ -284,6 +293,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 critic_model.state_dict()
             )
 
+    print("LEARNER - " f"Finished learning at step {learning_step}")
     evaluate_checkpoint(
         learning_step,
         writer,
@@ -294,5 +304,3 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         actor_model.state_dict(),
         critic_model.state_dict()
     )
-    print("LEARNER - " f"Finished learning at step {learning_step}")
-    writer.close()

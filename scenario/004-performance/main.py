@@ -10,6 +10,8 @@ from arguments import (ActorArgs, EnvironmentArgs, CoordinationArgs,
                        LoggingArgs, LearnerArgs, ExperienceArgs, ModelArgs, AllArgs)
 from learner import execute_learner
 
+torch.multiprocessing.set_sharing_strategy('file_system')
+
 # print = lambda *args: args
 
 def start_namespace_server() -> subprocess.Popen:
@@ -62,7 +64,7 @@ def main():
     learner_process: torch.multiprocessing.Process = \
         ctx.Process(target=execute_learner,
                     args=(learner_step, learner_sps, learner_args, actor_args, experience_args,
-                          logging_args, environment_args, model_args, experience_queue,
+                          logging_args, environment_args, model_args, coordination_args, experience_queue,
                           actor_model_queues, synchronization_lock))
     learner_process.start()
 
@@ -122,6 +124,7 @@ MAIN -  Actor model queue sizes: {actor_model_queues_sizes}
             print(main_status_string)
 
             if len(dead_processes) > 0:
+                time.sleep(10) # Wait for other processes to finish
                 break
 
             time.sleep(1)
