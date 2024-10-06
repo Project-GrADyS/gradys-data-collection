@@ -88,6 +88,7 @@ class LearnerArgs(Tap):
     """whether to visually evaluate the model at each checkpoint"""
     actor_learning_rate: float = 3e-6
     critic_learning_rate: float = 3e-6
+    use_lr_decay: bool = False
 
     total_learning_steps: int = 1_000_000
     """the total number of learning steps"""

@@ -177,6 +177,10 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     critic_optimizer = optim.AdamW(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
     actor_optimizer = optim.AdamW(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
 
+    critic_scheduler = optim.lr_scheduler.ReduceLROnPlateau(critic_optimizer, mode='min')
+    actor_scheduler = optim.lr_scheduler.ReduceLROnPlateau(actor_optimizer, mode='min')
+
+
     def upload_models():
         critic_state_dict = state_dict_to_cpu(critic_model.state_dict())
         target_critic_state_dict = state_dict_to_cpu(target_critic_model.state_dict())
@@ -247,6 +251,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         critic_optimizer.zero_grad(set_to_none=True)
         qf1_loss.backward()
         critic_optimizer.step()
+        if learner_args.use_lr_decay:
+            critic_scheduler.step(qf1_loss)
 
         if learning_step % learner_args.policy_frequency == 0:
             actor_actions = actor_model(data["state"]).view(data["state"].shape[0], -1)
@@ -255,6 +261,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             actor_optimizer.zero_grad(set_to_none=True)
             actor_loss.backward()
             actor_optimizer.step()
+            if learner_args.use_lr_decay:
+                actor_scheduler.step(actor_loss)
 
             # update the target network
             for param, target_param in zip(actor_model.parameters(), target_actor_model.parameters()):
