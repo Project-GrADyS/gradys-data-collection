@@ -77,8 +77,7 @@ class GrADySEnvironment(ParallelEnv):
                  reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
                  speed_action: bool = True,
                  end_when_all_collected: bool = True,
-                 use_pypy: bool = False,
-                 use_remote: bool = False):
+                 use_pypy: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -113,77 +112,28 @@ class GrADySEnvironment(ParallelEnv):
         self.end_when_all_collected = end_when_all_collected
         self.agents = self.possible_agents.copy()
 
-        import uuid
-        object_name = f"environment{uuid.uuid4()}"
-
-        pypy_path = shutil.which("pypy")
-        python_path = sys.executable
-
-        command_args = [
-            pypy_path if use_pypy else python_path, "remote_environment.py",
-            f"--object_name={object_name}",
-            f"--render_mode={render_mode}" if render_mode else None,
-            f"--algorithm_iteration_interval={algorithm_iteration_interval}",
-            f"--num_drones={num_drones}",
-            f"--num_sensors={num_sensors}",
-            f"--scenario_size={scenario_size}",
-            f"--max_episode_length={max_episode_length}",
-            f"--max_seconds_stalled={max_seconds_stalled}",
-            f"--communication_range={communication_range}",
-            f"--state_num_closest_sensors={state_num_closest_sensors}",
-            f"--state_num_closest_drones={state_num_closest_drones}",
-            f"--state_mode={state_mode}",
-            f"--id_on_state={id_on_state}",
-            f"--min_sensor_priority={min_sensor_priority}",
-            f"--max_sensor_priority={max_sensor_priority}",
-            f"--full_random_drone_position={full_random_drone_position}",
-            f"--reward={reward}",
-            f"--speed_action={speed_action}",
-            f"--end_when_all_collected={end_when_all_collected}"
-        ]
-        
         # Remove any empty strings
-        command_args = [arg for arg in command_args if arg]
-
-        # print("Iniciando servidor com comando:")
-        # print(command_args)
-        self.remote_env_process = None
-        if use_remote:
-            # Launch the remote environment process
-            self.remote_env_process = subprocess.Popen(command_args, stderr=sys.stderr, stdout=subprocess.PIPE)
-
-            # Connect to it using Pyro5
-            uri_string = f"PYRONAME:{object_name}"
-            ns = Pyro5.api.locate_ns()
-            while True:
-                try:
-                    ns.lookup(object_name)
-                    break
-                except NamingError:
-                    time.sleep(1)
-                    continue
-            self.remote_env = Pyro5.api.Proxy(uri_string)
-        else:
-            self.remote_env = GradysRemoteEnvironment(
-                render_mode=render_mode,
-                algorithm_iteration_interval=algorithm_iteration_interval,
-                num_drones=num_drones,
-                num_sensors=num_sensors,
-                scenario_size=scenario_size,
-                max_episode_length=max_episode_length,
-                max_seconds_stalled=max_seconds_stalled,
-                communication_range=communication_range,
-                state_num_closest_sensors=state_num_closest_sensors,
-                state_num_closest_drones=state_num_closest_drones,
-                state_mode=state_mode,
-                id_on_state=id_on_state,
-                min_sensor_priority=min_sensor_priority,
-                max_sensor_priority=max_sensor_priority,
-                full_random_drone_position=full_random_drone_position,
-                reward=reward,
-                speed_action=speed_action,
-                end_when_all_collected=end_when_all_collected,
-            )
+        self.remote_env = GradysRemoteEnvironment(
+            render_mode=render_mode,
+            algorithm_iteration_interval=algorithm_iteration_interval,
+            num_drones=num_drones,
+            min_sensor_count=min_sensor_count,
+            max_sensor_count=max_sensor_count,
+            scenario_size=scenario_size,
+            max_episode_length=max_episode_length,
+            max_seconds_stalled=max_seconds_stalled,
+            communication_range=communication_range,
+            state_num_closest_sensors=state_num_closest_sensors,
+            state_num_closest_drones=state_num_closest_drones,
+            state_mode=state_mode,
+            id_on_state=id_on_state,
+            min_sensor_priority=min_sensor_priority,
+            max_sensor_priority=max_sensor_priority,
+            full_random_drone_position=full_random_drone_position,
+            reward=reward,
+            speed_action=speed_action,
+            end_when_all_collected=end_when_all_collected,
+        )
 
 
     def observation_space(self, agent):
@@ -241,16 +191,6 @@ class GrADySEnvironment(ParallelEnv):
         })
         return {key: np.array(value) for key,value in observations.items()}, rewards, terminations, truncations, infos
 
-    def kill(self):
-        """
-        Kill the remove environment, if it exists. The environment is unusable afterwards
-        """
-        if self.remote_env_process is not None:
-            self.remote_env_process.kill()
-            self.remote_env_process = None
-        self.remote_env = None
-
-
 def make_env(args: EnvironmentArgs, evaluation=False):
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
@@ -270,6 +210,5 @@ def make_env(args: EnvironmentArgs, evaluation=False):
         reward=args.reward,
         speed_action=args.speed_action,
         end_when_all_collected=args.end_when_all_collected,
-        use_pypy=args.use_pypy,
-        use_remote=args.use_remote
+        use_pypy=args.use_pypy
     )

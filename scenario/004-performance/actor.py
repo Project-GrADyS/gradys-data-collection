@@ -246,5 +246,4 @@ def execute_actor(current_step: torch.multiprocessing.Value,
     finally:
         print(f"ACTOR {actor_id} - " f"Finished training at step {action_step}")
         env.close()
-        env.kill()
         writer.close()

@@ -35,7 +35,6 @@ class EnvironmentArgs(Tap):
 
     reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
     speed_action: bool = True
-    use_remote: bool = False
     use_pypy: bool = False
 
 class ExperienceArgs(Tap):

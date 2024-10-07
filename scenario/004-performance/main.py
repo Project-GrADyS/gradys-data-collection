@@ -14,11 +14,6 @@ torch.multiprocessing.set_sharing_strategy('file_system')
 
 # print = lambda *args: args
 
-def start_namespace_server() -> subprocess.Popen:
-    executable = sys.executable
-    return subprocess.Popen([f"{executable}", "-m", "Pyro5.nameserver"], stdout=sys.stdout, stderr=sys.stderr)
-
-
 def main():
     AllArgs().parse_args()
     actor_args = ActorArgs().parse_args(known_only=True)
@@ -42,11 +37,6 @@ def main():
     )
 
     # Beginning coordination process
-    print("MAIN - " "Starting nameserver")
-    ns_process = start_namespace_server()
-    print("MAIN - " "Sleeping until nameserver starts...")
-    time.sleep(1)
-
     ctx = torch.multiprocessing.get_context('spawn')
 
     print("MAIN - " "Creating synchronization structures")
@@ -81,7 +71,6 @@ def main():
 
     def terminate_all():
         print("MAIN - " "Terminating all processes")
-        ns_process.terminate()
         learner_process.terminate()
         for actor in actor_processes:
             actor.terminate()
