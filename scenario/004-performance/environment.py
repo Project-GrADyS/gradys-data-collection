@@ -62,7 +62,8 @@ class GrADySEnvironment(ParallelEnv):
                  render_mode: Optional[Literal["visual", "console"]] = None,
                  algorithm_iteration_interval: float = 0.5,
                  num_drones: int = 1,
-                 num_sensors: int = 2,
+                 min_sensor_count: int = 2,
+                 max_sensor_count: int = 12,
                  scenario_size: float = 100,
                  max_episode_length: float = 500,
                  max_seconds_stalled: int = 30,
@@ -93,7 +94,8 @@ class GrADySEnvironment(ParallelEnv):
 
         self.algorithm_iteration_interval = algorithm_iteration_interval
 
-        self.num_sensors = num_sensors
+        self.min_sensor_count = min_sensor_count
+        self.max_sensor_count = max_sensor_count
         self.num_drones = num_drones
         self.possible_agents = [f"drone{i}" for i in range(num_drones)]
         self.max_episode_length = max_episode_length
@@ -196,7 +198,8 @@ def make_env(args: EnvironmentArgs, evaluation=False):
         algorithm_iteration_interval=args.algorithm_iteration_interval,
         render_mode=None,
         num_drones=args.num_drones,
-        num_sensors=args.num_sensors,
+        min_sensor_count=args.min_sensor_count,
+        max_sensor_count=args.max_sensor_count,
         max_episode_length=args.max_episode_length,
         max_seconds_stalled=args.max_seconds_stalled,
         scenario_size=args.scenario_size,

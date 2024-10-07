@@ -25,7 +25,8 @@ class EnvironmentArgs(Tap):
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
     num_drones: int = 2
-    num_sensors: int = 5
+    min_sensor_count: int = 12
+    max_sensor_count: int = 12
     scenario_size: float = 100
     min_sensor_priority: float = 0.1
     max_sensor_priority: float = 1.0

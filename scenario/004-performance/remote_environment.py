@@ -168,6 +168,8 @@ class GradysRemoteEnvironment:
     episode_duration: int
     stall_duration: int
 
+    num_sensors: int
+
     sensors_collected: int
     collection_times: List[float]
 
@@ -177,7 +179,8 @@ class GradysRemoteEnvironment:
                  render_mode: Optional[Literal["visual", "console"]] = None,
                  algorithm_iteration_interval: float = 0.5,
                  num_drones: int = 1,
-                 num_sensors: int = 2,
+                 min_sensor_count: int = 2,
+                 max_sensor_count: int = 12,
                  scenario_size: float = 100,
                  max_episode_length: float = 500,
                  max_seconds_stalled: int = 30,
@@ -207,7 +210,8 @@ class GradysRemoteEnvironment:
 
         self.algorithm_iteration_interval = algorithm_iteration_interval
 
-        self.num_sensors = num_sensors
+        self.min_sensor_count = min_sensor_count
+        self.max_sensor_count = max_sensor_count
         self.num_drones = num_drones
         self.possible_agents = [f"drone{i}" for i in range(num_drones)]
         self.max_episode_length = max_episode_length
@@ -492,6 +496,8 @@ class GradysRemoteEnvironment:
         builder.add_handler(GrADySHandler(self))
 
         self.sensor_node_ids = []
+
+        self.num_sensors = random.randint(self.min_sensor_count, self.max_sensor_count)
 
         SensorProtocol.min_priority = self.min_sensor_priority
         SensorProtocol.max_priority = self.max_sensor_priority

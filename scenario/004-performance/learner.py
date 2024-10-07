@@ -306,8 +306,9 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 actor_model.state_dict(),
                 critic_model.state_dict()
             )
-            critic_scheduler.step(eval_results["avg_reward"])
-            actor_scheduler.step(eval_results["avg_reward"])
+            if learner_args.use_lr_decay:
+                critic_scheduler.step(eval_results["avg_reward"])
+                actor_scheduler.step(eval_results["avg_reward"])
 
     print("LEARNER - " f"Finished learning at step {learning_step}")
     evaluate_checkpoint(
