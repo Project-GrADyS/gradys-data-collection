@@ -124,6 +124,14 @@ def evaluate_checkpoint(learner_step: int,
     critic_model.train()
 
     print("Checkpoint evaluation done")
+    return {
+        "avg_reward": sum_avg_reward / evaluation_runs,
+        "max_reward": sum_max_reward / evaluation_runs,
+        "sum_reward": sum_sum_reward / evaluation_runs,
+        "episode_duration": sum_episode_duration / evaluation_runs,
+        "avg_collection_time": sum_avg_collection_time / evaluation_runs,
+        "all_collected_rate": sum_all_collected / evaluation_runs,
+    }
 
 def state_dict_to_cpu(state_dict):
     return {k: v.cpu() for k, v in state_dict.items()}
@@ -144,7 +152,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     total_threads = coordination_args.num_actors + 1
     # Learner gets the same amount of threads as the actor but also gets the remainer
     torch.set_num_threads(
-        math.ceil(total_process_count / total_threads) + total_process_count % total_threads
+        math.floor(total_process_count / total_threads) + total_process_count % total_threads
     )
     print("LEARNER - " f"Using {torch.get_num_threads()} threads")
 
@@ -177,8 +185,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     critic_optimizer = optim.AdamW(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
     actor_optimizer = optim.AdamW(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
 
-    critic_scheduler = optim.lr_scheduler.ReduceLROnPlateau(critic_optimizer, mode='min')
-    actor_scheduler = optim.lr_scheduler.ReduceLROnPlateau(actor_optimizer, mode='min')
+    critic_scheduler = optim.lr_scheduler.ReduceLROnPlateau(critic_optimizer, mode='max', factor=0.9)
+    actor_scheduler = optim.lr_scheduler.ReduceLROnPlateau(actor_optimizer, mode='max', factor=0.9)
 
 
     def upload_models():
@@ -251,8 +259,6 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         critic_optimizer.zero_grad(set_to_none=True)
         qf1_loss.backward()
         critic_optimizer.step()
-        if learner_args.use_lr_decay:
-            critic_scheduler.step(qf1_loss)
 
         if learning_step % learner_args.policy_frequency == 0:
             actor_actions = actor_model(data["state"]).view(data["state"].shape[0], -1)
@@ -261,8 +267,6 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             actor_optimizer.zero_grad(set_to_none=True)
             actor_loss.backward()
             actor_optimizer.step()
-            if learner_args.use_lr_decay:
-                actor_scheduler.step(actor_loss)
 
             # update the target network
             for param, target_param in zip(actor_model.parameters(), target_actor_model.parameters()):
@@ -279,6 +283,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 writer.add_scalar("learner/critic_values", qf1_a_values.mean().item(), learning_step)
                 writer.add_scalar("learner/critic_loss", qf1_loss.item(), learning_step)
                 writer.add_scalar("learner/actor_loss", actor_loss.item(), learning_step)
+                writer.add_scalar("learner/critic_lr", critic_scheduler.get_last_lr()[0], learning_step)
+                writer.add_scalar("learner/actor_lr", actor_scheduler.get_last_lr()[0], learning_step)
 
             sps = learner_args.learner_statistics_frequency / (time.time() - sps_start_time)
             sps_start_time = time.time()
@@ -290,7 +296,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             current_sps.value = sps
 
         if learner_args.checkpoints and learning_step % learner_args.checkpoint_freq == 0:
-            evaluate_checkpoint(
+            eval_results = evaluate_checkpoint(
                 learning_step,
                 writer,
                 device,
@@ -300,6 +306,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 actor_model.state_dict(),
                 critic_model.state_dict()
             )
+            critic_scheduler.step(eval_results["avg_reward"])
+            actor_scheduler.step(eval_results["avg_reward"])
 
     print("LEARNER - " f"Finished learning at step {learning_step}")
     evaluate_checkpoint(
