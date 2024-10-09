@@ -1,15 +1,16 @@
 from collections import defaultdict
 
-from main import Actor
-from environment import GrADySEnvironment
+from model import Actor
+from arguments import *
+from environment import GrADySEnvironment, action_space_from_args, observation_space_from_args
 import torch
 
 # Loading the model
-model_path = f"runs/results__a_2-s_12__1__1723034080/a_2-s_12-checkpoint3020.cleanrl_model"
+model_path = f"runs/vary sensor/always 12-1728339218.339061/always 12-checkpoint500000.cleanrl_model"
 
 print(f"Loading model from {model_path}")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-actor_model = torch.load(model_path, map_location=device)[0]
+actor_model = torch.load(model_path, map_location=device, weights_only=True)[0]
 
 if __name__ == "__main__":
     failure_causes = defaultdict(int)
@@ -17,7 +18,8 @@ if __name__ == "__main__":
     env = GrADySEnvironment(
         algorithm_iteration_interval=0.5,
         num_drones=2,
-        num_sensors=12,
+        min_sensor_count=12,
+        max_sensor_count=12,
         max_seconds_stalled=30,
         scenario_size=100,
         render_mode=None,
@@ -27,7 +29,18 @@ if __name__ == "__main__":
         full_random_drone_position=False,
         speed_action=True
     )
-    actor = Actor(env.action_space(0), env.observation_space(0)).to(device)
+
+    env_args = EnvironmentArgs()
+    env_args.state_mode = 'relative'
+    env_args.id_on_state = True
+    env_args.state_num_closest_sensors = 12
+    env_args.state_num_closest_drones = 1
+
+    model_args = ModelArgs()
+
+    actor = Actor(action_space_from_args(env_args).shape[0],
+                  observation_space_from_args(env_args).shape[0],
+                  model_args).to(device)
     actor.load_state_dict(actor_model)
 
     success_count = 0

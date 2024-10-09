@@ -99,7 +99,7 @@ class DroneProtocol(IProtocol):
         self.provider.send_mobility_command(command)
 
         if self.speed_action:
-            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval - 0.1)
+            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
 
     def initialize(self) -> None:
         self.current_position = (0, 0, 0)
@@ -666,6 +666,7 @@ class GradysRemoteEnvironment:
                     "avg_collection_time": sum(self.collection_times) / self.num_sensors,
                     "episode_duration": self.episode_duration,
                     "all_collected": all_sensors_collected,
+                    "completion_time": self.max_episode_length if not all_sensors_collected else self.simulator._current_timestamp,
                     "cause": end_cause
                 } for agent in self.agents
             }
