@@ -77,8 +77,7 @@ class GrADySEnvironment(ParallelEnv):
                  full_random_drone_position: bool = False,
                  reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
                  speed_action: bool = True,
-                 end_when_all_collected: bool = True,
-                 use_pypy: bool = False):
+                 end_when_all_collected: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -212,6 +211,5 @@ def make_env(args: EnvironmentArgs, evaluation=False):
         full_random_drone_position=False if evaluation else args.full_random_drone_position,
         reward=args.reward,
         speed_action=args.speed_action,
-        end_when_all_collected=args.end_when_all_collected,
-        use_pypy=args.use_pypy
+        end_when_all_collected=args.end_when_all_collected
     )

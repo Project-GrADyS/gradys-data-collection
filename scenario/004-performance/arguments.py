@@ -36,7 +36,6 @@ class EnvironmentArgs(Tap):
 
     reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
     speed_action: bool = True
-    use_pypy: bool = False
 
 class ExperienceArgs(Tap):
     buffer_size: int = int(1e6)
