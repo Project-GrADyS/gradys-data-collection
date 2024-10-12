@@ -6,7 +6,9 @@ import torch
 
 # Loading the model
 models = [
-    (2, 12, "runs/vary sensor/always 12-1728339218.339061/always 12-checkpoint500000.cleanrl_model"),
+    (2, 12, "runs/better results/12 to 36 sensors-1728613610.0721927/12 to 36 sensors-checkpoint11000000.cleanrl_model"),
+    (2, 24, "runs/better results/12 to 36 sensors-1728613610.0721927/12 to 36 sensors-checkpoint11000000.cleanrl_model"),
+    (2, 36, "runs/better results/12 to 36 sensors-1728613610.0721927/12 to 36 sensors-checkpoint11000000.cleanrl_model"),
     #(2, 12, "runs/vary sensor/between 2 and 12-1728347973.973188/between 2 and 12-checkpoint500000.cleanrl_model"),
 ]
 

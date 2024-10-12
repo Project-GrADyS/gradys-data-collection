@@ -6,6 +6,7 @@ from environment import GrADySEnvironment, action_space_from_args, observation_s
 import torch
 
 # Loading the model
+# model_path = f"runs/vary sensor/always 12-1728339218.339061/always 12-checkpoint500000.cleanrl_model"
 model_path = f"runs/vary sensor/always 12-1728339218.339061/always 12-checkpoint500000.cleanrl_model"
 
 print(f"Loading model from {model_path}")
@@ -22,7 +23,7 @@ if __name__ == "__main__":
         max_sensor_count=12,
         max_seconds_stalled=30,
         scenario_size=100,
-        render_mode=None,
+        render_mode="visual",
         state_num_closest_sensors=12,
         state_num_closest_drones=1,
         min_sensor_priority=1,
