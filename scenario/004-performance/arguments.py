@@ -88,9 +88,13 @@ class LearnerArgs(Tap):
     """will save model every model_save_freq checkpoints"""
     checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""
-    actor_learning_rate: float = 3e-6
-    critic_learning_rate: float = 3e-6
+    actor_learning_rate: float = 1e-3
+    critic_learning_rate: float = 1e-3
+
     use_lr_decay: bool = False
+    decay_patience: int = 20
+    decay_factor: float = 0.9
+    min_lr_decay: float = 1e-4
 
     total_learning_steps: int = 1_000_000
     """the total number of learning steps"""

@@ -187,8 +187,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     critic_optimizer = optim.AdamW(list(critic_model.parameters()), lr=learner_args.critic_learning_rate, fused=True)
     actor_optimizer = optim.AdamW(list(actor_model.parameters()), lr=learner_args.actor_learning_rate, fused=True)
 
-    critic_scheduler = optim.lr_scheduler.ReduceLROnPlateau(critic_optimizer, mode='max', factor=0.9)
-    actor_scheduler = optim.lr_scheduler.ReduceLROnPlateau(actor_optimizer, mode='max', factor=0.9)
+    critic_scheduler = optim.lr_scheduler.ReduceLROnPlateau(critic_optimizer, mode='max', factor=learner_args.decay_factor, patience=learner_args.decay_patience, min_lr=learner_args.min_lr_decay)
+    actor_scheduler = optim.lr_scheduler.ReduceLROnPlateau(actor_optimizer, mode='max', factor=learner_args.decay_factor, patience=learner_args.decay_patience, min_lr=learner_args.min_lr_decay)
 
 
     def upload_models():
