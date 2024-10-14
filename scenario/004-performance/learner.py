@@ -23,10 +23,12 @@ def evaluate_checkpoint(learner_step: int,
                         env_args: EnvironmentArgs,
                         actor_args: ActorArgs,
                         actor_model_dict: dict,
-                        critic_model_dict: dict):
+                        critic_model_dict: dict,
+                        save_model: bool = False):
     print("LEARNER - " "Reached checkpoint at step", learner_step)
-    model_path = f"{logging_args.get_path()}/{logging_args.run_name}-checkpoint{learner_step}.cleanrl_model"
-    torch.save((actor_model_dict, critic_model_dict), model_path)
+    if save_model:
+        model_path = f"{logging_args.get_path()}/{logging_args.run_name}-checkpoint{learner_step}.cleanrl_model"
+        torch.save((actor_model_dict, critic_model_dict), model_path)
 
     env_args = deepcopy(env_args)
     env_args.use_remote = False
@@ -304,7 +306,8 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 environment_args,
                 actor_args,
                 actor_model.state_dict(),
-                critic_model.state_dict()
+                critic_model.state_dict(),
+                (learning_step / learner_args.checkpoint_freq) % learner_args.model_save_freq == 0
             )
             if learner_args.use_lr_decay:
                 critic_scheduler.step(eval_results["avg_reward"])
@@ -319,5 +322,6 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         environment_args,
         actor_args,
         actor_model.state_dict(),
-        critic_model.state_dict()
+        critic_model.state_dict(),
+        True
     )

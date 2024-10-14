@@ -84,6 +84,8 @@ class LearnerArgs(Tap):
     """whether to save model checkpoints"""
     checkpoint_freq: int = 100_000
     """the frequency of checkpoints"""
+    model_save_freq: int = 100
+    """will save model every model_save_freq checkpoints"""
     checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""
     actor_learning_rate: float = 3e-6
