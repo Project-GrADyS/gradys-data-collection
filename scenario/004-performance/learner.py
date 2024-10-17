@@ -240,19 +240,17 @@ def execute_learner(current_step: torch.multiprocessing.Value,
             continue
 
         data: TensorDictBase = replay_buffer.sample().to(device)
-        active_flag = torch.zeros((experience_args.batch_size, environment_args.max_drone_count), device=device)
-        active_flag[:, :data['num_agents']] = 1
 
         with torch.no_grad():
             next_actions = target_actor_model(data["next_state"]).view(experience_args.batch_size, -1)
             next_observations = data["next_state"].view(experience_args.batch_size, -1)
-            next_state = torch.cat([next_observations, active_flag], dim=1)
+            next_state = torch.cat([next_observations, data["active_agents"]], dim=1)
             qf1_next_target = target_critic_model(next_state, next_actions)
             next_q_value = data["reward"].view(-1) + (1 - data["done"].view(-1)) * learner_args.gamma * qf1_next_target.view(-1)
 
 
         current_observations = data["state"].view(experience_args.batch_size, -1)
-        current_state = torch.cat([current_observations, active_flag], dim=1)
+        current_state = torch.cat([current_observations, data["active_agents"]], dim=1)
         all_actions = data["actions"].view(experience_args.batch_size, -1)
         qf1_a_values = critic_model(current_state, all_actions).view(-1)
         qf1_loss = mse_loss(qf1_a_values, next_q_value)

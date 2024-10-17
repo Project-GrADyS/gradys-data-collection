@@ -78,7 +78,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         "reward": torch.rand(1),
         "next_state": np.stack([observation_space.sample() for _ in range(environment_args.max_drone_count)]),
         "done": torch.rand(1),
-        "num_agents": torch.rand(1),
+        "active_agents": torch.rand(environment_args.max_drone_count),
         "priority": torch.rand(1),
     })
     buffer = sample.expand(actor_args.experience_buffer_size)
@@ -166,17 +166,19 @@ def execute_actor(current_step: torch.multiprocessing.Value,
             reward = torch.tensor(rewards[env.agents[0]]).to(device)
             done = torch.tensor(int(terminations[env.agents[0]])).to(device)
 
+            active_agents = torch.zeros((1, environment_args.max_drone_count), device=device)
+            active_agents[0, :len(env.agents)] = 1
+
             # Estimating TD error for prioritized experience replay
             all_next_obs = torch.tensor(all_agent_next_obs, dtype=torch.float32).to(device)
             next_actions = target_actor_model(all_next_obs).view(1, -1)
             next_observations = torch.tensor(all_agent_next_obs.reshape(1, -1), dtype=torch.float32).to(device)
-            active_flag = torch.zeros((1, environment_args.max_drone_count), device=device)
-            active_flag[0, :len(env.agents)] = 1
-            next_state = torch.cat([next_observations, active_flag], dim=1)
+            next_state = torch.cat([next_observations, active_agents], dim=1)
             qf1_next_target = target_critic_model(next_state, next_actions)
             next_q_value = reward.flatten() + (1 - done.flatten()) * learner_args.gamma * (
                 qf1_next_target).view(1, -1)
-            current_state = torch.tensor(all_agent_obs.reshape(1, -1), dtype=torch.float32).to(device)
+            current_observations = torch.tensor(all_agent_obs.reshape(1, -1), dtype=torch.float32).to(device)
+            current_state = torch.cat([current_observations, active_agents], dim=1)
             all_current_actions = torch.tensor(all_agent_actions.reshape(1, -1), dtype=torch.float32).to(device)
             qf1_a_values = critic_model(current_state, all_current_actions).view(1, -1)
             qf1_loss = mse_loss(qf1_a_values, next_q_value)
@@ -187,7 +189,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 "reward": rewards[env.agents[0]],
                 "next_state": all_agent_next_obs,
                 "done": int(terminations[env.agents[0]]),
-                "num_agents": len(env.agents),
+                "active_agents": active_agents,
                 "priority": qf1_loss.item(),
             })
             cursor += 1
