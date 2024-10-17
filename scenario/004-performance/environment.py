@@ -36,10 +36,10 @@ def observation_space_from_args(args: EnvironmentArgs):
         return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
     elif args.state_mode == "all_positions":
         # Observe locations of all agents
-        agent_positions = args.num_drones * 2
+        agent_positions = args.max_drone_count * 2
         agent_index = 1
-        sensor_positions = args.num_sensors * 2
-        sensor_visited = args.num_sensors
+        sensor_positions = args.max_drone_count * 2
+        sensor_visited = args.max_drone_count
 
         return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited + agent_id,))
 
@@ -61,7 +61,8 @@ class GrADySEnvironment(ParallelEnv):
     def __init__(self,
                  render_mode: Optional[Literal["visual", "console"]] = None,
                  algorithm_iteration_interval: float = 0.5,
-                 num_drones: int = 1,
+                 min_drone_count: int = 2,
+                 max_drone_count: int = 2,
                  min_sensor_count: int = 2,
                  max_sensor_count: int = 12,
                  scenario_size: float = 100,
@@ -77,8 +78,7 @@ class GrADySEnvironment(ParallelEnv):
                  full_random_drone_position: bool = False,
                  reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
                  speed_action: bool = True,
-                 end_when_all_collected: bool = True,
-                 use_pypy: bool = False):
+                 end_when_all_collected: bool = True):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -96,8 +96,9 @@ class GrADySEnvironment(ParallelEnv):
 
         self.min_sensor_count = min_sensor_count
         self.max_sensor_count = max_sensor_count
-        self.num_drones = num_drones
-        self.possible_agents = [f"drone{i}" for i in range(num_drones)]
+        self.min_drone_count = min_drone_count
+        self.max_drone_count = max_drone_count
+        self.possible_agents = [f"drone{i}" for i in range(max_drone_count)]
         self.max_episode_length = max_episode_length
         self.max_seconds_stalled = max_seconds_stalled
         self.scenario_size = scenario_size
@@ -112,13 +113,13 @@ class GrADySEnvironment(ParallelEnv):
         self.reward = reward
         self.speed_action = speed_action
         self.end_when_all_collected = end_when_all_collected
-        self.agents = self.possible_agents.copy()
 
         # Remove any empty strings
         self.remote_env = GradysRemoteEnvironment(
             render_mode=render_mode,
             algorithm_iteration_interval=algorithm_iteration_interval,
-            num_drones=num_drones,
+            min_drone_count=min_drone_count,
+            max_drone_count=max_drone_count,
             min_sensor_count=min_sensor_count,
             max_sensor_count=max_sensor_count,
             scenario_size=scenario_size,
@@ -176,6 +177,7 @@ class GrADySEnvironment(ParallelEnv):
         """
 
         obs, info = self.remote_env.reset(seed, options)
+        self.agents = self.remote_env.agents
         return {key: np.array(value) for key,value in obs.items()}, info
 
     def step(self, actions):
@@ -197,7 +199,8 @@ def make_env(args: EnvironmentArgs, evaluation=False):
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
         render_mode=None,
-        num_drones=args.num_drones,
+        min_drone_count=args.min_drone_count,
+        max_drone_count=args.max_drone_count,
         min_sensor_count=args.min_sensor_count,
         max_sensor_count=args.max_sensor_count,
         max_episode_length=args.max_episode_length,
@@ -212,6 +215,5 @@ def make_env(args: EnvironmentArgs, evaluation=False):
         full_random_drone_position=False if evaluation else args.full_random_drone_position,
         reward=args.reward,
         speed_action=args.speed_action,
-        end_when_all_collected=args.end_when_all_collected,
-        use_pypy=args.use_pypy
+        end_when_all_collected=args.end_when_all_collected
     )
