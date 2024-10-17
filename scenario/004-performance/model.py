@@ -10,7 +10,10 @@ class Critic(nn.Module):
     def __init__(self, action_space_size, observation_space_size, env_args: EnvironmentArgs, args: ModelArgs):
         super().__init__()
         self.fc1 = nn.Linear(
-            observation_space_size * env_args.num_drones + action_space_size * env_args.num_drones, args.critic_model_size)
+            observation_space_size * env_args.max_drone_count +
+            action_space_size * env_args.max_drone_count +
+            env_args.max_drone_count,
+            args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, 1)
 

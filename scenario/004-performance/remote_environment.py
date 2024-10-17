@@ -169,6 +169,7 @@ class GradysRemoteEnvironment:
     stall_duration: int
 
     num_sensors: int
+    num_drones: int
 
     sensors_collected: int
     collection_times: List[float]
@@ -178,8 +179,9 @@ class GradysRemoteEnvironment:
     def __init__(self,
                  render_mode: Optional[Literal["visual", "console"]] = None,
                  algorithm_iteration_interval: float = 0.5,
-                 num_drones: int = 1,
-                 min_sensor_count: int = 2,
+                 min_drone_count: int = 2,
+                 max_drone_count: int = 2,
+                 min_sensor_count: int = 12,
                  max_sensor_count: int = 12,
                  scenario_size: float = 100,
                  max_episode_length: float = 500,
@@ -212,8 +214,9 @@ class GradysRemoteEnvironment:
 
         self.min_sensor_count = min_sensor_count
         self.max_sensor_count = max_sensor_count
-        self.num_drones = num_drones
-        self.possible_agents = [f"drone{i}" for i in range(num_drones)]
+        self.min_drone_count = min_drone_count
+        self.max_drone_count = max_drone_count
+        self.possible_agents = [f"drone{i}" for i in range(max_drone_count)]
         self.max_episode_length = max_episode_length
         self.max_seconds_stalled = max_seconds_stalled
         self.scenario_size = scenario_size
@@ -239,88 +242,6 @@ class GradysRemoteEnvironment:
         # Closing the simulator
         self.simulator._finalize_simulation()
 
-    def observe_simulation_angle_distance(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
-
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
-
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
-
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes,
-                                              key=lambda sensor_node: squared_distance(sensor_node.position,
-                                                                                       agent_position))
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                angle = np.arctan2(sensor_node.position[1] - agent_position[1],
-                                   sensor_node.position[0] - agent_position[0])
-                distance = np.linalg.norm(np.array(sensor_node.position[:2]) - np.array(agent_position[:2]))
-                closest_unvisited_sensors[i, 0] = angle / np.pi
-                closest_unvisited_sensors[i, 1] = distance / self.scenario_size
-
-            closest_agents = np.zeros((self.state_num_closest_drones, 2))
-
-            sorted_agents = sorted(agent_nodes,
-                                   key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                angle = np.arctan2(agent_node.position[1] - agent_position[1],
-                                   agent_node.position[0] - agent_position[0])
-                distance = np.linalg.norm(np.array(agent_node.position[:2]) - np.array(agent_position[:2]))
-                closest_agents[i, 0] = angle / np.pi
-                closest_agents[i, 1] = distance / self.scenario_size
-
-            state[f"drone{agent_index}"] = np.concatenate([
-                closest_agents.flatten(),
-                closest_unvisited_sensors.flatten(),
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ]).tolist()
-        return state
-
-    def observe_simulation_angle(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
-
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
-
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors,))
-
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes,
-                                              key=lambda sensor_node: squared_distance(sensor_node.position,
-                                                                                       agent_position))
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                angle = np.arctan2(sensor_node.position[1] - agent_position[1],
-                                   sensor_node.position[0] - agent_position[0])
-                closest_unvisited_sensors[i] = angle / np.pi
-
-            closest_agents = np.zeros((self.state_num_closest_drones,))
-
-            sorted_agents = sorted(agent_nodes,
-                                   key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                angle = np.arctan2(agent_node.position[1] - agent_position[1],
-                                   agent_node.position[0] - agent_position[0])
-                closest_agents[i] = angle / np.pi
-
-            state[f"drone{agent_index}"] = np.concatenate([
-                closest_agents,
-                closest_unvisited_sensors,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ]).tolist()
-        return state
-
     def observe_simulation_relative_positions(self):
         unvisited_sensor_nodes = np.array([self.simulator.get_node(sensor_id).position[:2]
                                            for sensor_id in self.sensor_node_ids
@@ -334,7 +255,7 @@ class GradysRemoteEnvironment:
         agent_kd_tree = KDTree(agent_nodes)
 
         closest_sensor_count = min(self.state_num_closest_sensors, len(unvisited_sensor_nodes))
-        closest_agent_count = min(self.state_num_closest_drones, len(agent_nodes))
+        closest_agent_count = min(self.state_num_closest_drones, len(agent_nodes) - 1)
 
         agent_nodes_reshaped = agent_nodes.reshape((self.num_drones, 1, 2))
 
@@ -384,80 +305,10 @@ class GradysRemoteEnvironment:
                 ([agent_index / self.num_drones] if self.id_on_state else [])
         return state
 
-    def observe_simulation_absolute_positions(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
-
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
-
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
-
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes,
-                                              key=lambda sensor_node: squared_distance(sensor_node.position,
-                                                                                       agent_position))
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                closest_unvisited_sensors[i] = sensor_node.position[:2]
-
-            closest_agents = np.zeros((self.state_num_closest_drones, 2))
-
-            sorted_agents = sorted(agent_nodes,
-                                   key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                closest_agents[i] = agent_node.position[:2]
-
-            state[f"drone{agent_index}"] = np.concatenate([
-                np.array(agent_position[:2]) / self.scenario_size,
-                closest_agents.flatten() / self.scenario_size,
-                closest_unvisited_sensors.flatten() / self.scenario_size,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ]).tolist()
-        return state
-
-    def observe_simulation_all_positions(self):
-        sensor_locations = np.zeros(self.num_sensors * 2)
-        sensor_visited = np.zeros(self.num_sensors)
-        for i in range(self.num_sensors):
-            sensor_node = self.simulator.get_node(self.sensor_node_ids[i])
-            sensor_locations[i * 2] = sensor_node.position[0] / self.scenario_size
-            sensor_locations[i * 2 + 1] = sensor_node.position[1] / self.scenario_size
-
-            sensor_visited[i] = int(sensor_node.protocol_encapsulator.protocol.has_collected)
-
-        agent_positions = np.zeros(self.num_drones * 2)
-        for i in range(self.num_drones):
-            agent_node = self.simulator.get_node(self.agent_node_ids[i])
-            agent_positions[i * 2] = agent_node.position[0] / self.scenario_size
-            agent_positions[i * 2 + 1] = agent_node.position[1] / self.scenario_size
-
-        general_observations = np.concatenate([sensor_locations, sensor_visited, agent_positions])
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            # General observations and agent index
-            state[f"drone{agent_index}"] = np.concatenate([
-                general_observations,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ]).tolist()
-        return state
-
     def observe_simulation(self):
         if self.state_mode == "relative":
             return self.observe_simulation_relative_positions()
-        elif self.state_mode == "distance_angle":
-            return self.observe_simulation_angle_distance()
-        elif self.state_mode == "angle":
-            return self.observe_simulation_angle()
-        elif self.state_mode == "absolute":
-            return self.observe_simulation_absolute_positions()
-        elif self.state_mode == "all_positions":
-            return self.observe_simulation_all_positions()
+        raise NotImplementedError()
 
     def detect_out_of_bounds_agent(self, agent: Node) -> bool:
         return abs(agent.position[0]) > self.scenario_size or abs(agent.position[1]) > self.scenario_size
@@ -471,7 +322,8 @@ class GradysRemoteEnvironment:
         hands that are played.
         Returns the observations for each agent
         """
-        self.agents = self.possible_agents.copy()
+        self.num_drones = random.randint(self.min_drone_count, self.max_drone_count)
+        self.agents = self.possible_agents[:self.num_drones]
 
         builder = SimulationBuilder(SimulationConfiguration(
             execution_logging=False,
@@ -545,7 +397,6 @@ class GradysRemoteEnvironment:
 
         return self.observe_simulation(), {}
 
-    @Pyro5.server.expose
     def step(self, actions):
         """
         step(action) takes in an action for each agent and should return the
@@ -566,7 +417,8 @@ class GradysRemoteEnvironment:
             return {}, {}, {}, {}, {}
 
         # Acting
-        for index, action in enumerate(actions.values()):
+        for index, actor in enumerate(self.agents):
+            action = actions[actor]
             agent_node = self.simulator.get_node(self.agent_node_ids[index])
 
             coordinate_limit = self.scenario_size

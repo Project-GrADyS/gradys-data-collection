@@ -73,11 +73,12 @@ def execute_actor(current_step: torch.multiprocessing.Value,
     receive_models()
 
     sample = TensorDict({
-        "state": np.stack([observation_space.sample() for _ in range(environment_args.num_drones)]),
-        "actions": np.stack([action_space.sample() for _ in range(environment_args.num_drones)]),
+        "state": np.stack([observation_space.sample() for _ in range(environment_args.max_drone_count)]),
+        "actions": np.stack([action_space.sample() for _ in range(environment_args.max_drone_count)]),
         "reward": torch.rand(1),
-        "next_state": np.stack([observation_space.sample() for _ in range(environment_args.num_drones)]),
+        "next_state": np.stack([observation_space.sample() for _ in range(environment_args.max_drone_count)]),
         "done": torch.rand(1),
+        "num_agents": torch.rand(1),
         "priority": torch.rand(1),
     })
     buffer = sample.expand(actor_args.experience_buffer_size)
@@ -107,7 +108,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         sps_start_time = time()
 
         obs, _ = env.reset()
-        all_agent_obs = np.stack([obs[agent] for agent in env.agents])
+        all_agent_obs = np.stack([obs.get(agent, np.zeros(observation_space.shape)) for agent in env.possible_agents])
         terminated = False
         cursor = 0
         action_step = 0
@@ -122,11 +123,11 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 obs, _ = env.reset()
                 terminated = False
 
+            # Choosing action
             if actor_args.use_heuristics:
                 actions = {
                     agent: heuristics(obs[agent]) for agent in env.agents
                 }
-                all_agent_actions = np.stack([actions[agent] for agent in env.agents])
             else:
                 # ALGO LOGIC: put action logic here
                 with torch.no_grad():
@@ -140,15 +141,14 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                     all_actions.clip_(torch.tensor(action_space.low, device=device),
                                       torch.tensor(action_space.high, device=device))
 
-                    all_agent_actions = all_actions.cpu().numpy()
-
                     for index, agent in enumerate(env.agents):
                         actions[agent] = all_actions[index].cpu().numpy()
+
+            all_agent_actions = np.stack([actions.get(agent, np.zeros(action_space.shape)) for agent in env.possible_agents])
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, terminations, truncations, infos = env.step(actions)
 
-            # TRY NOT TO MODIFY: record rewards for plotting purposes
             if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
                 terminated = True
                 episode_count += 1
@@ -162,14 +162,17 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 all_avg_collection_times += info["avg_collection_time"]
                 all_collected_count += info["all_collected"]
 
-            all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
+            all_agent_next_obs = np.stack([next_obs.get(agent, np.zeros(observation_space.shape)) for agent in env.possible_agents])
             reward = torch.tensor(rewards[env.agents[0]]).to(device)
             done = torch.tensor(int(terminations[env.agents[0]])).to(device)
 
             # Estimating TD error for prioritized experience replay
             all_next_obs = torch.tensor(all_agent_next_obs, dtype=torch.float32).to(device)
             next_actions = target_actor_model(all_next_obs).view(1, -1)
-            next_state = torch.tensor(all_agent_next_obs.reshape(1, -1), dtype=torch.float32).to(device)
+            next_observations = torch.tensor(all_agent_next_obs.reshape(1, -1), dtype=torch.float32).to(device)
+            active_flag = torch.zeros((1, environment_args.max_drone_count), device=device)
+            active_flag[0, :len(env.agents)] = 1
+            next_state = torch.cat([next_observations, active_flag], dim=1)
             qf1_next_target = target_critic_model(next_state, next_actions)
             next_q_value = reward.flatten() + (1 - done.flatten()) * learner_args.gamma * (
                 qf1_next_target).view(1, -1)
@@ -184,6 +187,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 "reward": rewards[env.agents[0]],
                 "next_state": all_agent_next_obs,
                 "done": int(terminations[env.agents[0]]),
+                "num_agents": len(env.agents),
                 "priority": qf1_loss.item(),
             })
             cursor += 1
