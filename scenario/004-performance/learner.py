@@ -206,7 +206,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
     replay_buffer = TensorDictReplayBuffer(batch_size=experience_args.batch_size,
                                            storage=LazyTensorStorage(experience_args.buffer_size, device=device),
-                                           sampler=PrioritizedSampler(experience_args.buffer_size, alpha=0.8, beta=1.1),
+                                           sampler=PrioritizedSampler(experience_args.buffer_size, alpha=experience_args.priority_alpha, beta=experience_args.priority_beta),
                                            prefetch=10,
                                            priority_key="priority")
 

@@ -43,6 +43,10 @@ class ExperienceArgs(Tap):
     """the replay memory buffer size"""
     batch_size: int = 256
     """the batch size of sample from the reply memory"""
+    priority_alpha: float = 0.6
+    """the alpha parameter of the prioritized experience replay"""
+    priority_beta: float = 1.1
+    """the beta parameter of the prioritized experience replay"""
 
 class RemoteEnvironmentArgs(Tap):
     object_name: str = "environment"
