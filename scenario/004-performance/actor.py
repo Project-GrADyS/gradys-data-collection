@@ -23,6 +23,9 @@ def clone_state_dict(state_dict: dict):
 
     return cloned_dict
 
+def agent_options(env_args):
+    return [f"drone{agent}" for agent in range(env_args.max_drone_count)]
+
 
 @torch.no_grad()
 def execute_actor(current_step: torch.multiprocessing.Value,
@@ -33,6 +36,8 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                   learner_args: LearnerArgs,
                   logging_args: LoggingArgs,
                   environment_args: EnvironmentArgs,
+                  max_scaling_drone_count: torch.multiprocessing.Value,
+                  max_scaling_sensor_count: torch.multiprocessing.Value,
                   coordination_args: CoordinationArgs,
                   experience_queue: torch.multiprocessing.JoinableQueue,
                   model_queue: torch.multiprocessing.Queue,
@@ -86,7 +91,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
     buffer = buffer.zero_()
     buffer = buffer.share_memory_()
 
-    env = make_env(environment_args)
+    env = make_env(environment_args, max_scaling_drone_count.value, max_scaling_sensor_count.value)
 
     try:
         heuristics = None
@@ -108,7 +113,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         sps_start_time = time()
 
         obs, _ = env.reset()
-        all_agent_obs = np.stack([obs.get(agent, np.zeros(observation_space.shape)) for agent in env.possible_agents])
+        all_agent_obs = np.stack([obs.get(f"drone{agent}", np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
         terminated = False
         cursor = 0
         action_step = 0
@@ -120,6 +125,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 receive_models()
 
             if terminated:
+                env = make_env(environment_args, max_scaling_drone_count.value, max_scaling_sensor_count.value)
                 obs, _ = env.reset()
                 terminated = False
 
@@ -144,7 +150,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                     for index, agent in enumerate(env.agents):
                         actions[agent] = all_actions[index].cpu().numpy()
 
-            all_agent_actions = np.stack([actions.get(agent, np.zeros(action_space.shape)) for agent in env.possible_agents])
+            all_agent_actions = np.stack([actions.get(agent, np.zeros(action_space.shape)) for agent in agent_options(environment_args)])
 
             # TRY NOT TO MODIFY: execute the game and log data.
             next_obs, rewards, terminations, truncations, infos = env.step(actions)
@@ -162,7 +168,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 all_avg_collection_times += info["avg_collection_time"]
                 all_collected_count += info["all_collected"]
 
-            all_agent_next_obs = np.stack([next_obs.get(agent, np.zeros(observation_space.shape)) for agent in env.possible_agents])
+            all_agent_next_obs = np.stack([next_obs.get(agent, np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
             reward = torch.tensor(rewards[env.agents[0]]).to(device)
             done = torch.tensor(int(terminations[env.agents[0]])).to(device)
 

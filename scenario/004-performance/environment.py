@@ -195,14 +195,14 @@ class GrADySEnvironment(ParallelEnv):
         })
         return {key: np.array(value) for key,value in observations.items()}, rewards, terminations, truncations, infos
 
-def make_env(args: EnvironmentArgs, evaluation=False):
+def make_env(args: EnvironmentArgs, max_drone_count, max_sensor_count, evaluation=False):
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
         render_mode=None,
         min_drone_count=args.min_drone_count,
-        max_drone_count=args.max_drone_count,
+        max_drone_count=max_drone_count,
         min_sensor_count=args.min_sensor_count,
-        max_sensor_count=args.max_sensor_count,
+        max_sensor_count=max_sensor_count,
         max_episode_length=args.max_episode_length,
         max_seconds_stalled=args.max_seconds_stalled,
         scenario_size=args.scenario_size,
