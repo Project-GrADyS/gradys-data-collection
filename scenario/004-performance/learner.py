@@ -94,12 +94,15 @@ def evaluate_checkpoint(learner_step: int,
     critic_model.eval()
 
     sum_avg_reward = 0
+    sum_avg_reward_per_agent: dict[int, float] = {}
     sum_max_reward = 0
     sum_sum_reward = 0
     sum_episode_duration = 0
     sum_avg_collection_time = 0
     sum_all_collected = 0
     sum_completion_time = 0
+    sum_completion_time_per_agent: dict[int, float] = {}
+    env_count_per_agent: dict[int, int] = {}
 
     heuristics = None
     if actor_args.use_heuristics == 'greedy':
@@ -136,6 +139,11 @@ def evaluate_checkpoint(learner_step: int,
                 sum_avg_collection_time += info["avg_collection_time"]
                 sum_all_collected += info["all_collected"]
                 sum_completion_time += info["completion_time"]
+
+                num_agents = len(temp_env.agents)
+                sum_avg_reward_per_agent[num_agents] = sum_avg_reward_per_agent.get(num_agents, 0) + info["avg_reward"]
+                sum_completion_time_per_agent[num_agents] = sum_completion_time_per_agent.get(num_agents, 0) + info["completion_time"]
+                env_count_per_agent[num_agents] = env_count_per_agent.get(num_agents, 0) + 1
                 break
         temp_env.close()
 
@@ -174,6 +182,19 @@ def evaluate_checkpoint(learner_step: int,
         sum_completion_time / evaluation_runs,
         learner_step,
     )
+
+    for num_agents in sum_avg_reward_per_agent:
+        writer.add_scalar(
+            f"eval/avg_reward_per_agent/{num_agents}",
+            sum_avg_reward_per_agent[num_agents] / env_count_per_agent[num_agents],
+            learner_step,
+        )
+        writer.add_scalar(
+            f"eval/completion_time_per_agent/{num_agents}",
+            sum_completion_time_per_agent[num_agents] / env_count_per_agent[num_agents],
+            learner_step,
+        )
+
     temp_env.close()
 
     actor_model.train()
