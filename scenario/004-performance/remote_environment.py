@@ -251,7 +251,7 @@ class GradysRemoteEnvironment:
 
 
         agent_nodes = np.array([self.simulator.get_node(agent_id).position[:2]
-                                for agent_id in self.agent_node_ids]).reshape((-1, 2))
+                                for agent_id in self.agent_node_ids], dtype='float64').reshape((-1, 2))
         agent_kd_tree = KDTree(agent_nodes)
 
         closest_sensor_count = min(self.state_num_closest_sensors, len(unvisited_sensor_nodes))
