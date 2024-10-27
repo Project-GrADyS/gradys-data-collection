@@ -113,7 +113,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         sps_start_time = time()
 
         obs, _ = env.reset()
-        all_agent_obs = np.stack([obs.get(f"drone{agent}", np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
+        all_agent_obs = np.stack([obs.get(agent, np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
         terminated = False
         cursor = 0
         action_step = 0
