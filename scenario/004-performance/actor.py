@@ -180,6 +180,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
             # Estimating TD error for prioritized experience replay
             all_next_obs = torch.tensor(all_agent_next_obs, dtype=torch.float32).to(device)
             next_actions = target_actor_model(all_next_obs).view(1, -1)
+            next_actions[0, len(env.agents) * action_space.shape[0]:] = 0
             next_observations = torch.tensor(all_agent_next_obs.reshape(1, -1), dtype=torch.float32).to(device)
             next_state = torch.cat([next_observations, active_agents], dim=1)
             qf1_next_target = target_critic_model(next_state, next_actions)

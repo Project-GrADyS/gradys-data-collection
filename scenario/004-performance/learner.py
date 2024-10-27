@@ -301,6 +301,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     print("LEARNER - " f"Learning loop starting")
     sps_start_time = time.time()
     for learning_step in range(1, learner_args.total_learning_steps + 1):
+        # Collecting experiences from actors
         received = False
         while not experience_queue.empty():
             received = True
@@ -312,6 +313,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
             experience_queue.task_done()
             received_experiences += len(experience_clone)
+
         if received:
             print("LEARNER - " f"Receiving experiences at step {learning_step} - new total {received_experiences}")
 
@@ -320,8 +322,11 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
         data: TensorDictBase = replay_buffer.sample().to(device)
 
+        active_indexes_mask = data["active_agents"].repeat_interleave(action_space.shape[0], dim=1)
+
         with torch.no_grad():
             next_actions = target_actor_model(data["next_state"]).view(experience_args.batch_size, -1)
+            next_actions *= active_indexes_mask
             next_observations = data["next_state"].view(experience_args.batch_size, -1)
             next_state = torch.cat([next_observations, data["active_agents"]], dim=1)
             qf1_next_target = target_critic_model(next_state, next_actions)
@@ -344,6 +349,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
 
         if learning_step % learner_args.policy_frequency == 0:
             actor_actions = actor_model(data["state"]).view(data["state"].shape[0], -1)
+            actor_actions *= active_indexes_mask
             actor_loss = -critic_model(current_state, actor_actions).mean()
 
             actor_optimizer.zero_grad(set_to_none=True)
