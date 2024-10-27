@@ -99,6 +99,7 @@ def evaluate_checkpoint(learner_step: int,
     sum_episode_duration = 0
     sum_avg_collection_time = 0
     sum_all_collected = 0
+    sum_completion_time = 0
 
     heuristics = None
     if actor_args.use_heuristics == 'greedy':
@@ -134,6 +135,7 @@ def evaluate_checkpoint(learner_step: int,
                 sum_episode_duration += info["episode_duration"]
                 sum_avg_collection_time += info["avg_collection_time"]
                 sum_all_collected += info["all_collected"]
+                sum_completion_time += info["completion_time"]
                 break
         temp_env.close()
 
@@ -165,6 +167,11 @@ def evaluate_checkpoint(learner_step: int,
     writer.add_scalar(
         "eval/all_collected_rate",
         sum_all_collected / evaluation_runs,
+        learner_step,
+    )
+    writer.add_scalar(
+        "eval/completion_time",
+        sum_completion_time / evaluation_runs,
         learner_step,
     )
     temp_env.close()

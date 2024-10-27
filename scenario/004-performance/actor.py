@@ -110,6 +110,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         all_max_reward = 0
         all_sum_reward = 0
         all_episode_duration = 0
+        all_completion_time = 0
         sps_start_time = time()
 
         obs, _ = env.reset()
@@ -167,6 +168,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 all_episode_duration += info["episode_duration"]
                 all_avg_collection_times += info["avg_collection_time"]
                 all_collected_count += info["all_collected"]
+                all_completion_time += info["completion_time"]
 
             all_agent_next_obs = np.stack([next_obs.get(agent, np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
             reward = torch.tensor(rewards[env.agents[0]]).to(device)
@@ -239,6 +241,11 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 writer.add_scalar(
                     f"actor{actor_id}/all_collected_rate",
                     all_collected_count / episode_count,
+                    action_step,
+                )
+                writer.add_scalar(
+                    f"actor{actor_id}/completion_time",
+                    all_completion_time / episode_count,
                     action_step,
                 )
 
