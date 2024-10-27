@@ -91,7 +91,6 @@ def execute_actor(current_step: torch.multiprocessing.Value,
     buffer = buffer.zero_()
     buffer = buffer.share_memory_()
 
-    env = make_env(environment_args, max_scaling_drone_count.value, max_scaling_sensor_count.value)
 
     try:
         heuristics = None
@@ -113,6 +112,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         all_completion_time = 0
         sps_start_time = time()
 
+        env = make_env(environment_args, max_scaling_drone_count.value, max_scaling_sensor_count.value)
         obs, _ = env.reset()
         all_agent_obs = np.stack([obs.get(agent, np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
         terminated = False

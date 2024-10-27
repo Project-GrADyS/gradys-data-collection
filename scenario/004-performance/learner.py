@@ -79,8 +79,6 @@ def evaluate_checkpoint(learner_step: int,
         model_path = f"{logging_args.get_path()}/{logging_args.run_name}-checkpoint{learner_step}.cleanrl_model"
         torch.save((actor_model_dict, critic_model_dict), model_path)
 
-    temp_env = make_env(env_args, max_drone_count, max_sensor_count)
-
     action_space = action_space_from_args(env_args)
     observation_space = observation_space_from_args(env_args)
 
@@ -116,6 +114,7 @@ def evaluate_checkpoint(learner_step: int,
     for i in range(evaluation_runs):
         if i % 10 == 0:
             print("LEARNER - "f"Evaluating model ({i}/{evaluation_runs})")
+        temp_env = make_env(env_args, max_drone_count, max_sensor_count)
         temp_obs, _ = temp_env.reset()
         while True:
             actions = {}
