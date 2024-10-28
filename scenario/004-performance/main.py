@@ -50,14 +50,14 @@ def main():
     actor_steps = [torch.multiprocessing.Value('i', 0) for _ in range(coordination_args.num_actors)]
     actor_sps = [torch.multiprocessing.Value('d', 0.0) for _ in range(coordination_args.num_actors)]
 
-    max_scaling_drone_count = torch.multiprocessing.Value('i', environment_args.min_drone_count if environment_args.progressive_scaling else environment_args.max_drone_count)
-    max_scaling_sensor_count = torch.multiprocessing.Value('i', environment_args.min_sensor_count if environment_args.progressive_scaling else environment_args.max_sensor_count)
+    scaling_limits = torch.multiprocessing.Array('i', [environment_args.min_drone_count, environment_args.max_drone_count,
+                                                       environment_args.min_sensor_count, environment_args.max_sensor_count])
 
     print("MAIN - " "Starting learner process")
     learner_process: torch.multiprocessing.Process = \
         ctx.Process(target=execute_learner,
                     args=(learner_step, learner_sps, learner_args, actor_args, experience_args,
-                          logging_args, environment_args, max_scaling_drone_count, max_scaling_sensor_count, model_args,
+                          logging_args, environment_args, scaling_limits, model_args,
                           coordination_args, experience_queue, actor_model_queues, synchronization_lock))
     learner_process.start()
 
@@ -68,7 +68,7 @@ def main():
         actor_process = \
             ctx.Process(target=execute_actor,
                         args=(actor_steps[i], actor_sps[i], i, model_args, actor_args, learner_args, logging_args,
-                              environment_args, max_scaling_drone_count, max_scaling_sensor_count, coordination_args,
+                              environment_args, scaling_limits, coordination_args,
                               experience_queue, actor_model_queues[i], synchronization_lock))
         actor_processes.append(actor_process)
         actor_process.start()
@@ -113,6 +113,7 @@ MAIN -  Live processes: {live_processes}
 MAIN -  Dead processes: {dead_processes}
 MAIN -  Experience queue size: {experience_queue_size}
 MAIN -  Actor model queue sizes: {actor_model_queues_sizes}
+MAIN -  Scaling limits: {scaling_limits[:]}
             """
             print(main_status_string)
 

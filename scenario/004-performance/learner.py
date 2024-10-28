@@ -15,61 +15,16 @@ from arguments import LearnerArgs, ExperienceArgs, ActorArgs, LoggingArgs, Envir
 from environment import make_env, observation_space_from_args, action_space_from_args
 from heuristics import create_greedy_heuristics, create_random_heuristics
 from model import Actor, Critic
+from scaling import ProgressiveScaler
 
 # print = lambda *args: args
-
-
-class EnvScaler:
-    def __init__(self, env_args: EnvironmentArgs):
-        self.env_args = env_args
-
-        self._scaling_steps = []
-        for a in range(self.env_args.min_drone_count, self.env_args.max_drone_count + 1):
-            for s in range(self.env_args.min_sensor_count, self.env_args.max_sensor_count + 1):
-                self._scaling_steps.append((a, s))
-
-        self._current_scaling_step = 0 if self.env_args.progressive_scaling else len(self._scaling_steps) - 1
-        self._current_confidence = 0
-
-    def scale(self, all_collected_rate: float):
-        if not self.env_args.progressive_scaling:
-            return
-
-        if all_collected_rate >= self.env_args.progressive_scaling_cutoff:
-            self._current_confidence += 1
-        else:
-            self._current_confidence = 0
-
-        if (self._current_confidence >= self.env_args.progressive_scaling_confidence
-                and self._current_scaling_step < len(self._scaling_steps) - 1):
-            self._current_scaling_step += 1
-            self._current_confidence = 0
-
-    @property
-    def max_drone_count(self):
-        return self._scaling_steps[self._current_scaling_step][0]
-
-    @property
-    def max_sensor_count(self):
-        return self._scaling_steps[self._current_scaling_step][1]
-
-    @property
-    def current_scaling_step(self):
-        return self._current_scaling_step
-
-    @property
-    def current_confidence(self):
-        return self._current_confidence
-
-
 
 def evaluate_checkpoint(learner_step: int,
                         writer: SummaryWriter,
                         device: torch.device,
                         logging_args: LoggingArgs,
                         env_args: EnvironmentArgs,
-                        max_drone_count: int,
-                        max_sensor_count: int,
+                        scaling_limits: [int, int, int, int],
                         actor_args: ActorArgs,
                         actor_model_dict: dict,
                         critic_model_dict: dict,
@@ -114,7 +69,7 @@ def evaluate_checkpoint(learner_step: int,
     for i in range(evaluation_runs):
         if i % 10 == 0:
             print("LEARNER - "f"Evaluating model ({i}/{evaluation_runs})")
-        temp_env = make_env(env_args, max_drone_count, max_sensor_count)
+        temp_env = make_env(env_args, scaling_limits)
         temp_obs, _ = temp_env.reset()
         while True:
             actions = {}
@@ -219,8 +174,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                     experience_args: ExperienceArgs,
                     logging_args: LoggingArgs,
                     environment_args: EnvironmentArgs,
-                    max_scaling_drone_count: torch.multiprocessing.Value,
-                    max_scaling_sensor_count: torch.multiprocessing.Value,
+                    scaling_limits: [int, int, int, int],
                     model_args: ModelArgs,
                     coordination_args: CoordinationArgs,
                     experience_queue: torch.multiprocessing.JoinableQueue,
@@ -266,7 +220,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
     critic_scheduler = optim.lr_scheduler.ReduceLROnPlateau(critic_optimizer, mode='max', factor=learner_args.decay_factor, patience=learner_args.decay_patience, min_lr=learner_args.min_lr_decay)
     actor_scheduler = optim.lr_scheduler.ReduceLROnPlateau(actor_optimizer, mode='max', factor=learner_args.decay_factor, patience=learner_args.decay_patience, min_lr=learner_args.min_lr_decay)
 
-    scaler = EnvScaler(environment_args)
+    scaler = ProgressiveScaler(environment_args, scaling_limits)
 
     def upload_models():
         critic_state_dict = state_dict_to_cpu(critic_model.state_dict())
@@ -390,8 +344,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 device,
                 logging_args,
                 environment_args,
-                max_scaling_drone_count.value,
-                max_scaling_sensor_count.value,
+                scaling_limits,
                 actor_args,
                 actor_model.state_dict(),
                 critic_model.state_dict(),
@@ -402,11 +355,9 @@ def execute_learner(current_step: torch.multiprocessing.Value,
                 actor_scheduler.step(eval_results["avg_reward"])
 
             scaler.scale(eval_results["all_collected_rate"])
-            max_scaling_drone_count.value = scaler.max_drone_count
-            max_scaling_sensor_count.value = scaler.max_sensor_count
 
-            writer.add_scalar("learner/max_drone_count", max_scaling_drone_count.value, learning_step)
-            writer.add_scalar("learner/max_sensor_count", max_scaling_sensor_count.value, learning_step)
+            writer.add_scalar("learner/max_drone_count", scaling_limits[1], learning_step)
+            writer.add_scalar("learner/max_sensor_count", scaling_limits[3], learning_step)
             writer.add_scalar("learner/scaler_confidence", scaler._current_confidence, learning_step)
 
     print("LEARNER - " f"Finished learning at step {learning_step}")
@@ -416,8 +367,7 @@ def execute_learner(current_step: torch.multiprocessing.Value,
         device,
         logging_args,
         environment_args,
-        max_scaling_drone_count.value,
-        max_scaling_sensor_count.value,
+        scaling_limits,
         actor_args,
         actor_model.state_dict(),
         critic_model.state_dict(),

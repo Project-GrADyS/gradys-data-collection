@@ -3,8 +3,6 @@ import random
 from time import sleep, time
 from typing import List, Optional, Literal, Tuple
 
-import Pyro5.server
-
 from gradysim.protocol.interface import IProtocol
 from gradysim.protocol.messages.communication import BroadcastMessageCommand
 from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand, SetSpeedMobilityCommand
@@ -205,9 +203,6 @@ class GrADySEnvironment(ParallelEnv):
     episode_duration: int
     stall_duration: int
 
-    num_sensors: int
-    num_drones: int
-
     sensors_collected: int
     collection_times: List[float]
 
@@ -216,10 +211,8 @@ class GrADySEnvironment(ParallelEnv):
     def __init__(self,
                  render_mode: Optional[Literal["visual", "console"]] = None,
                  algorithm_iteration_interval: float = 0.5,
-                 min_drone_count: int = 2,
-                 max_drone_count: int = 2,
-                 min_sensor_count: int = 12,
-                 max_sensor_count: int = 12,
+                 drone_count: int = 2,
+                 sensor_count: int = 12,
                  scenario_size: float = 100,
                  max_episode_length: float = 500,
                  max_seconds_stalled: int = 30,
@@ -249,11 +242,9 @@ class GrADySEnvironment(ParallelEnv):
 
         self.algorithm_iteration_interval = algorithm_iteration_interval
 
-        self.min_sensor_count = min_sensor_count
-        self.max_sensor_count = max_sensor_count
-        self.min_drone_count = min_drone_count
-        self.max_drone_count = max_drone_count
-        self.possible_agents = [f"drone{i}" for i in range(max_drone_count)]
+        self.num_sensors = sensor_count
+        self.num_drones = drone_count
+        self.possible_agents = [f"drone{i}" for i in range(drone_count)]
         self.max_episode_length = max_episode_length
         self.max_seconds_stalled = max_seconds_stalled
         self.scenario_size = scenario_size
@@ -269,7 +260,6 @@ class GrADySEnvironment(ParallelEnv):
         self.speed_action = speed_action
         self.end_when_all_collected = end_when_all_collected
 
-    @Pyro5.server.expose
     def close(self):
         """
         Close should release any graphical displays, subprocesses, network connections
@@ -336,10 +326,10 @@ class GrADySEnvironment(ParallelEnv):
                                       if i < len(closest_unvisited_sensor_list[agent_index])
                                       else -1
                                       for i in range(self.state_num_closest_sensors * 2)]
-            state[f"drone{agent_index}"] = \
-                padded_closest_agents + \
-                padded_closest_sensors + \
-                ([agent_index / self.num_drones] if self.id_on_state else [])
+            state[f"drone{agent_index}"] = np.array(
+                padded_closest_agents +
+                padded_closest_sensors +
+                ([agent_index / self.num_drones] if self.id_on_state else []))
         return state
 
     def observe_simulation(self):
@@ -350,7 +340,6 @@ class GrADySEnvironment(ParallelEnv):
     def detect_out_of_bounds_agent(self, agent: Node) -> bool:
         return abs(agent.position[0]) > self.scenario_size or abs(agent.position[1]) > self.scenario_size
 
-    @Pyro5.server.expose
     def reset(self, seed=None, options=None):
         """
         Reset needs to initialize the `agents` attribute and must set up the
@@ -359,8 +348,7 @@ class GrADySEnvironment(ParallelEnv):
         hands that are played.
         Returns the observations for each agent
         """
-        self.num_drones = random.randint(self.min_drone_count, self.max_drone_count)
-        self.agents = self.possible_agents[:self.num_drones]
+        self.agents = self.possible_agents[:]
 
         builder = SimulationBuilder(SimulationConfiguration(
             execution_logging=False,
@@ -385,8 +373,6 @@ class GrADySEnvironment(ParallelEnv):
         builder.add_handler(GrADySHandler(self))
 
         self.sensor_node_ids = []
-
-        self.num_sensors = random.randint(self.min_sensor_count, self.max_sensor_count)
 
         SensorProtocol.min_priority = self.min_sensor_priority
         SensorProtocol.max_priority = self.max_sensor_priority
@@ -455,7 +441,7 @@ class GrADySEnvironment(ParallelEnv):
 
         # Acting
         for index, actor in enumerate(self.agents):
-            action = actions[actor]
+            action = actions[actor].tolist()
             agent_node = self.simulator.get_node(self.agent_node_ids[index])
 
             coordinate_limit = self.scenario_size
@@ -562,14 +548,12 @@ class GrADySEnvironment(ParallelEnv):
 
         return observations, rewards, terminations, truncations, infos
 
-def make_env(args: EnvironmentArgs, max_drone_count, max_sensor_count, evaluation=False):
+def make_env(args: EnvironmentArgs, scaling_limits: [int, int, int, int], evaluation=False):
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
         render_mode=None,
-        min_drone_count=args.min_drone_count,
-        max_drone_count=max_drone_count,
-        min_sensor_count=args.min_sensor_count,
-        max_sensor_count=max_sensor_count,
+        drone_count=random.randint(scaling_limits[0], scaling_limits[1]),
+        sensor_count=random.randint(scaling_limits[2], scaling_limits[3]),
         max_episode_length=args.max_episode_length,
         max_seconds_stalled=args.max_seconds_stalled,
         scenario_size=args.scenario_size,

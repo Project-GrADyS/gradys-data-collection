@@ -36,8 +36,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                   learner_args: LearnerArgs,
                   logging_args: LoggingArgs,
                   environment_args: EnvironmentArgs,
-                  max_scaling_drone_count: torch.multiprocessing.Value,
-                  max_scaling_sensor_count: torch.multiprocessing.Value,
+                  scaling_limits: [int, int, int, int],
                   coordination_args: CoordinationArgs,
                   experience_queue: torch.multiprocessing.JoinableQueue,
                   model_queue: torch.multiprocessing.Queue,
@@ -112,7 +111,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
         all_completion_time = 0
         sps_start_time = time()
 
-        env = make_env(environment_args, max_scaling_drone_count.value, max_scaling_sensor_count.value)
+        env = make_env(environment_args, scaling_limits)
         obs, _ = env.reset()
         all_agent_obs = np.stack([obs.get(agent, np.zeros(observation_space.shape)) for agent in agent_options(environment_args)])
         terminated = False
@@ -126,7 +125,7 @@ def execute_actor(current_step: torch.multiprocessing.Value,
                 receive_models()
 
             if terminated:
-                env = make_env(environment_args, max_scaling_drone_count.value, max_scaling_sensor_count.value)
+                env = make_env(environment_args, scaling_limits)
                 obs, _ = env.reset()
                 terminated = False
 
