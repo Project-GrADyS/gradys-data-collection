@@ -13,6 +13,16 @@ class ProgressiveScaler:
         self._current_scaling_step = 0 if self.env_args.progressive_scaling else len(self._scaling_steps) - 1
         self._current_confidence = 0
 
+        self._update_scaling()
+
+    def _update_scaling(self):
+        if not self.env_args.progressive_scaling:
+            return
+        self.scaling_limits[0] = self._scaling_steps[self._current_scaling_step][0]
+        self.scaling_limits[1] = self._scaling_steps[self._current_scaling_step][1]
+        self.scaling_limits[2] = self._scaling_steps[self._current_scaling_step][2]
+        self.scaling_limits[3] = self._scaling_steps[self._current_scaling_step][3]
+
     def scale(self, all_collected_rate: float):
         if not self.env_args.progressive_scaling:
             return
@@ -27,7 +37,4 @@ class ProgressiveScaler:
             self._current_scaling_step += 1
             self._current_confidence = 0
 
-        self.scaling_limits[0] = self._scaling_steps[self._current_scaling_step][0]
-        self.scaling_limits[1] = self._scaling_steps[self._current_scaling_step][1]
-        self.scaling_limits[2] = self._scaling_steps[self._current_scaling_step][2]
-        self.scaling_limits[3] = self._scaling_steps[self._current_scaling_step][3]
+        self._update_scaling()
