@@ -16,8 +16,7 @@ from gradysim.simulator.handler.visualization import VisualizationHandler, Visua
     VisualizationController
 from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
-from gradysim.protocol.position import squared_distance
-from gym.spaces import Box
+from gymnasium.spaces import Box
 from pettingzoo import ParallelEnv
 
 from arguments import StateMode, RemoteEnvironmentArgs, EnvironmentArgs
