@@ -53,11 +53,11 @@ for num_agents, num_sensors, model_path in models:
     actor_model = torch.load(model_path, map_location=device, weights_only=True)[0]
 
     def get_agent_positions(environment: GrADySEnvironment):
-        agent_nodes = [environment.remote_env.simulator.get_node(agent_id) for agent_id in environment.remote_env.agent_node_ids]
+        agent_nodes = [environment.simulator.get_node(agent_id) for agent_id in environment.agent_node_ids]
         return {f"Agent {agent_id}": agent_node.position for agent_id, agent_node in enumerate(agent_nodes)}
 
     def get_sensor_positions(environment: GrADySEnvironment):
-        sensor_nodes = [environment.remote_env.simulator.get_node(sensor_id) for sensor_id in environment.remote_env.sensor_node_ids]
+        sensor_nodes = [environment.simulator.get_node(sensor_id) for sensor_id in environment.sensor_node_ids]
         return {f"Sensor {sensor_id}": sensor_node.position for sensor_id, sensor_node in enumerate(sensor_nodes)}
 
     if __name__ == "__main__":
@@ -101,7 +101,7 @@ for num_agents, num_sensors, model_path in models:
                 "agent": agent,
                 "x": position[0],
                 "y": position[1],
-                "timestamp": env.remote_env.simulator._current_timestamp
+                "timestamp": env.simulator._current_timestamp
             })
 
         sensor_positions = []
@@ -125,7 +125,7 @@ for num_agents, num_sensors, model_path in models:
                     "agent": agent,
                     "x": position[0],
                     "y": position[1],
-                    "timestamp": env.remote_env.simulator._current_timestamp
+                    "timestamp": env.simulator._current_timestamp
                 })
 
             obs = next_obs
