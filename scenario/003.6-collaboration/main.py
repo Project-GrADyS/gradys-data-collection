@@ -13,6 +13,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import tyro
 from stable_baselines3.common.buffers import ReplayBuffer
+from torch.nn import ZeroPad1d
 from torch.utils.tensorboard import SummaryWriter
 
 from environment import GrADySEnvironment, StateMode
@@ -94,7 +95,8 @@ class Args:
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
-    num_drones: int = 2
+    min_num_drones: int = 1
+    max_num_drones: int = 2
     min_num_sensors: int = 5
     max_num_sensors: int = 5
     scenario_size: float = 100
@@ -116,11 +118,12 @@ args = tyro.cli(Args)
 
 def make_env(evaluation=False, max_possible=False):
     num_sensors = random.randint(args.min_num_sensors, args.max_num_sensors) if not max_possible else args.max_num_sensors
+    num_drones = random.randint(args.min_num_drones, args.max_num_drones) if not max_possible else args.max_num_drones
 
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
         render_mode="visual" if evaluation and args.checkpoint_visual_evaluation else None,
-        num_drones=args.num_drones,
+        num_drones=num_drones,
         num_sensors=num_sensors,
         max_episode_length=args.max_episode_length,
         max_seconds_stalled=args.max_seconds_stalled,
@@ -143,7 +146,7 @@ class Critic(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
         self.fc1 = nn.Linear(
-            np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, args.critic_model_size)
+            np.array(observation_space.shape).prod() * args.max_num_drones + np.prod(action_space.shape) * args.max_num_drones, args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, 1)
 
@@ -225,13 +228,13 @@ def main():
         low=0,
         high=1,
         dtype=np.float32,
-        shape=(args.num_drones, *observation_space.shape),
+        shape=(args.max_num_drones, *observation_space.shape),
     )
     extended_action_space = gym.spaces.Box(
         low=action_space.low[0],
         high=action_space.high[0],
         dtype=np.float32,
-        shape=(args.num_drones, *action_space.shape),
+        shape=(args.max_num_drones, *action_space.shape),
     )
     rb = ReplayBuffer(
         args.buffer_size,
@@ -334,15 +337,16 @@ def main():
 
     # TRY NOT TO MODIFY: start the game
     env = make_env()
-    obs, _ = env.reset(seed=args.seed)
-    all_agent_obs = np.stack([obs[agent] for agent in env.agents])
-    terminated = False
+    terminated = True
     for global_step in range(args.total_timesteps):
         step_start = time.time()
 
         if terminated:
             env = make_env()
             obs, _ = env.reset(seed=args.seed)
+            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
+            all_agent_obs = np.pad(all_agent_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
+                                   mode='constant', constant_values=-1)
             terminated = False
 
         if args.use_heuristics:
@@ -372,10 +376,13 @@ def main():
                     for index, agent in enumerate(env.agents):
                         actions[agent] = all_actions[index].cpu().numpy()
 
+        all_agent_actions = np.pad(all_agent_actions, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
+                                   mode='constant', constant_values=-1)
+
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
 
-                # TRY NOT TO MODIFY: record rewards for plotting purposes
+        # TRY NOT TO MODIFY: record rewards for plotting purposes
         if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
             episode_count += 1
             terminated = True
@@ -392,9 +399,14 @@ def main():
         if args.use_heuristics:
             obs = next_obs
             all_agent_obs = np.stack([obs[agent] for agent in env.agents])
+            all_agent_obs = np.pad(all_agent_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
+                                   mode='constant', constant_values=-1)
         else:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
             all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
+            all_agent_next_obs = np.pad(all_agent_next_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
+                                   mode='constant', constant_values=-1)
+
             rb.add(
                 all_agent_obs,
                 all_agent_next_obs,
@@ -412,7 +424,7 @@ def main():
             if global_step <= args.learning_starts:
                 continue
             
-            training_step_count = args.num_drones if args.train_once_for_each_agent else 1
+            training_step_count = args.max_num_drones if args.train_once_for_each_agent else 1
             data = rb.sample(args.batch_size * training_step_count)
 
             with torch.no_grad():
