@@ -95,8 +95,8 @@ class Args:
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
-    min_num_drones: int = 1
-    max_num_drones: int = 2
+    min_num_drones: int = 2
+    max_num_drones: int = 4
     min_num_sensors: int = 5
     max_num_sensors: int = 5
     scenario_size: float = 100
@@ -372,9 +372,9 @@ def main():
                                                   actor.action_scale * args.exploration_noise))
                     all_actions.clip_(torch.tensor(action_space.low, device=device),
                                       torch.tensor(action_space.high, device=device))
-                    all_agent_actions = all_actions.cpu().numpy()
                     for index, agent in enumerate(env.agents):
                         actions[agent] = all_actions[index].cpu().numpy()
+                    all_agent_actions = np.stack([actions[agent] for agent in env.agents])
 
         all_agent_actions = np.pad(all_agent_actions, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
                                    mode='constant', constant_values=-1)
