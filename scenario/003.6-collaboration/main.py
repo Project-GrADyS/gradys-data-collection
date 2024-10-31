@@ -95,7 +95,8 @@ class Args:
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
     num_drones: int = 2
-    num_sensors: int = 5
+    min_num_sensors: int = 5
+    max_num_sensors: int = 5
     scenario_size: float = 100
     min_sensor_priority: float = 0.1
     max_sensor_priority: float = 1.0
@@ -113,12 +114,14 @@ class Args:
 args = tyro.cli(Args)
 
 
-def make_env( evaluation=False):
+def make_env(evaluation=False, max_possible=False):
+    num_sensors = random.randint(args.min_num_sensors, args.max_num_sensors) if not max_possible else args.max_num_sensors
+
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
         render_mode="visual" if evaluation and args.checkpoint_visual_evaluation else None,
         num_drones=args.num_drones,
-        num_sensors=args.num_sensors,
+        num_sensors=num_sensors,
         max_episode_length=args.max_episode_length,
         max_seconds_stalled=args.max_seconds_stalled,
         scenario_size=args.scenario_size,
@@ -203,10 +206,9 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
-    env = make_env()
-
-    observation_space = env.observation_space(0)
-    action_space = env.action_space(0)
+    max_env = make_env(max_possible=True)
+    observation_space = max_env.observation_space(0)
+    action_space = max_env.action_space(0)
 
     assert isinstance(action_space, gym.spaces.Box), "only continuous action space is supported"
 
@@ -247,8 +249,6 @@ def main():
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
 
-        temp_env = make_env(True)
-
         actor.eval()
         target_actor.eval()
         qf1.eval()
@@ -265,6 +265,7 @@ def main():
         for i in range(evaluation_runs):
             if i % 100 == 0:
                 print(f"Evaluating model ({i+1}/{evaluation_runs})")
+            temp_env = make_env(True)
             temp_obs, _ = temp_env.reset(seed=args.seed)
             while True:
                 actions = {}
@@ -332,6 +333,7 @@ def main():
         print("Checkpoint evaluation done")
 
     # TRY NOT TO MODIFY: start the game
+    env = make_env()
     obs, _ = env.reset(seed=args.seed)
     all_agent_obs = np.stack([obs[agent] for agent in env.agents])
     terminated = False
@@ -339,6 +341,7 @@ def main():
         step_start = time.time()
 
         if terminated:
+            env = make_env()
             obs, _ = env.reset(seed=args.seed)
             terminated = False
 
