@@ -184,7 +184,7 @@ if args.use_heuristics == 'greedy':
 if args.use_heuristics == 'random':
     heuristics = create_random_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
 
-run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
+run_name = f"{args.run_name}/{args.exp_name}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
 
 def main():
@@ -336,7 +336,7 @@ def main():
             obs, _ = env.reset(seed=args.seed)
             all_agent_obs = np.stack([obs[agent] for agent in env.agents])
             all_agent_obs = np.pad(all_agent_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=-1)
+                                   mode='constant', constant_values=0)
             terminated = False
 
         if args.use_heuristics:
@@ -367,7 +367,7 @@ def main():
                     all_agent_actions = np.stack([actions[agent] for agent in env.agents])
 
         all_agent_actions = np.pad(all_agent_actions, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=-1)
+                                   mode='constant', constant_values=0)
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
@@ -390,12 +390,12 @@ def main():
             obs = next_obs
             all_agent_obs = np.stack([obs[agent] for agent in env.agents])
             all_agent_obs = np.pad(all_agent_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=-1)
+                                   mode='constant', constant_values=0)
         else:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
             all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
             all_agent_next_obs = np.pad(all_agent_next_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=-1)
+                                   mode='constant', constant_values=0)
 
             experience = TensorDict({
                 "state": all_agent_obs,
