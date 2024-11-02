@@ -21,7 +21,7 @@ class Args:
 experiments = [
 ]
 
-for min_agents, max_agents in [(2, 4)]:
+for min_agents, max_agents in [(2, 2)]:
     for min_sensors, max_sensors in [(12, 12)]:
         experiments.append(["python", "main.py", f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
             f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}","--run-name=vary agents",

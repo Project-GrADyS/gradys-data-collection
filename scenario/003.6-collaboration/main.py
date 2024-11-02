@@ -13,8 +13,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 import tyro
 from stable_baselines3.common.buffers import ReplayBuffer
+from tensordict import TensorDict
 from torch.nn import ZeroPad1d
 from torch.utils.tensorboard import SummaryWriter
+from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage
 
 from environment import GrADySEnvironment, StateMode
 from heuristics import create_greedy_heuristics, create_random_heuristics
@@ -95,7 +97,7 @@ class Args:
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
-    min_num_drones: int = 2
+    min_num_drones: int = 4
     max_num_drones: int = 4
     min_num_sensors: int = 5
     max_num_sensors: int = 5
@@ -224,25 +226,13 @@ def main():
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.critic_learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.actor_learning_rate)
 
-    extended_observation_space = gym.spaces.Box(
-        low=0,
-        high=1,
-        dtype=np.float32,
-        shape=(args.max_num_drones, *observation_space.shape),
-    )
-    extended_action_space = gym.spaces.Box(
-        low=action_space.low[0],
-        high=action_space.high[0],
-        dtype=np.float32,
-        shape=(args.max_num_drones, *action_space.shape),
-    )
-    rb = ReplayBuffer(
-        args.buffer_size,
-        extended_observation_space,
-        extended_action_space,
-        device,
-        handle_timeout_termination=False,
-    )
+    replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
+                                           storage=LazyTensorStorage(args.buffer_size, device=device))
+                                           # sampler=PrioritizedSampler(args.buffer_size,
+                                           #                            alpha=experience_args.priority_alpha,
+                                           #                            beta=experience_args.priority_beta),
+                                           # prefetch=10,
+                                           # priority_key="priority")
 
     start_time = time.time()
 
@@ -407,14 +397,14 @@ def main():
             all_agent_next_obs = np.pad(all_agent_next_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
                                    mode='constant', constant_values=-1)
 
-            rb.add(
-                all_agent_obs,
-                all_agent_next_obs,
-                all_agent_actions,
-                np.array(rewards[env.agents[0]]),
-                np.array(terminations[env.agents[0]]),
-                [infos.get(agent, {}) for agent in env.agents]
-            )
+            experience = TensorDict({
+                "state": all_agent_obs,
+                "actions": all_agent_actions,
+                "reward": rewards[env.agents[0]],
+                "next_state": all_agent_next_obs,
+                "done": int(terminations[env.agents[0]])
+            }, device=device).to(torch.float32)
+            replay_buffer.add(experience)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -425,17 +415,19 @@ def main():
                 continue
             
             training_step_count = args.max_num_drones if args.train_once_for_each_agent else 1
-            data = rb.sample(args.batch_size * training_step_count)
+            samples = replay_buffer.sample()
+
+
 
             with torch.no_grad():
-                next_actions = target_actor(data.next_observations).view(data.next_observations.shape[0], -1)
-                next_state = data.next_observations.reshape(data.next_observations.shape[0], -1)
+                next_actions = target_actor(samples["next_state"]).view(samples["next_state"].shape[0], -1)
+                next_state = samples["next_state"].reshape(samples["next_state"].shape[0], -1)
                 qf1_next_target = qf1_target(next_state, next_actions)
-                next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * args.gamma * (
+                next_q_value = samples["reward"].flatten() + (1 - samples["done"].flatten()) * args.gamma * (
                     qf1_next_target).view(-1)
 
-            current_state = data.observations.reshape(data.observations.shape[0], -1)
-            all_actions = data.actions.reshape(data.actions.shape[0], -1)
+            current_state = samples["state"].reshape(samples["state"].shape[0], -1)
+            all_actions = samples["actions"].reshape(samples["actions"].shape[0], -1)
             qf1_a_values = qf1(current_state, all_actions).view(-1)
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
@@ -445,7 +437,7 @@ def main():
             q_optimizer.step()
 
             if global_step % args.policy_frequency == 0:
-                actor_actions = actor(data.observations).view(data.observations.shape[0], -1)
+                actor_actions = actor(samples["state"]).view(samples["state"].shape[0], -1)
 
                 actor_loss = -qf1(current_state, actor_actions).mean()
                 actor_optimizer.zero_grad()
