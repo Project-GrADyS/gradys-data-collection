@@ -228,9 +228,9 @@ class GrADySEnvironment(ParallelEnv):
     def action_space(self, agent):
         # Drone can move in any direction
         if self.speed_action:
-            return Box(-1, 1, shape=(2,))
+            return Box(0, 1, shape=(2,))
         else:
-            return Box(-1, 1, shape=(1,))
+            return Box(0, 1, shape=(1,))
 
     def render(self):
         """
