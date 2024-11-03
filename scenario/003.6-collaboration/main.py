@@ -62,6 +62,8 @@ class Args:
     """the learning rate of the actor optimizer"""
     critic_learning_rate: float = 3e-6
     """the learning rate of the critic optimizer"""
+    critic_use_active_agents: bool = False
+    """if toggled, the critic will use the number of active agents as an input"""
     buffer_size: int = int(1e6)
     """the replay memory buffer size"""
     gamma: float = 0.99
@@ -148,12 +150,13 @@ class Critic(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
         self.fc1 = nn.Linear(
-            np.array(observation_space.shape).prod() * args.max_num_drones + np.prod(action_space.shape) * args.max_num_drones, args.critic_model_size)
+            np.array(observation_space.shape).prod() * args.max_num_drones + np.prod(action_space.shape) * args.max_num_drones + args.critic_use_active_agents,
+            args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, 1)
 
-    def forward(self, x, a):
-        x = torch.cat([x, a], 1)
+    def forward(self, x, a, active_agents):
+        x = torch.cat([x, a, active_agents] if args.critic_use_active_agents else [x, a], 1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
@@ -402,7 +405,8 @@ def main():
                 "actions": all_agent_actions,
                 "reward": rewards[env.agents[0]],
                 "next_state": all_agent_next_obs,
-                "done": int(terminations[env.agents[0]])
+                "done": int(terminations[env.agents[0]]),
+                "active_agents": [len(env.agents) / args.max_num_drones]
             }, device=device).to(torch.float32)
             replay_buffer.add(experience)
 
@@ -422,13 +426,13 @@ def main():
             with torch.no_grad():
                 next_actions = target_actor(samples["next_state"]).view(samples["next_state"].shape[0], -1)
                 next_state = samples["next_state"].reshape(samples["next_state"].shape[0], -1)
-                qf1_next_target = qf1_target(next_state, next_actions)
+                qf1_next_target = qf1_target(next_state, next_actions, samples["active_agents"])
                 next_q_value = samples["reward"].flatten() + (1 - samples["done"].flatten()) * args.gamma * (
                     qf1_next_target).view(-1)
 
             current_state = samples["state"].reshape(samples["state"].shape[0], -1)
             all_actions = samples["actions"].reshape(samples["actions"].shape[0], -1)
-            qf1_a_values = qf1(current_state, all_actions).view(-1)
+            qf1_a_values = qf1(current_state, all_actions, samples["active_agents"]).view(-1)
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
             # optimize the model
@@ -439,7 +443,7 @@ def main():
             if global_step % args.policy_frequency == 0:
                 actor_actions = actor(samples["state"]).view(samples["state"].shape[0], -1)
 
-                actor_loss = -qf1(current_state, actor_actions).mean()
+                actor_loss = -qf1(current_state, actor_actions, samples["active_agents"]).mean()
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
                 actor_optimizer.step()
