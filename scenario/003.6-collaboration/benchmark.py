@@ -21,14 +21,22 @@ class Args:
 experiments = [
 ]
 
-for min_agents, max_agents in [(2, 2)]:
-    for min_sensors, max_sensors in [(12, 12)]:
-        experiments.append(["python", "main.py", f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
-            f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}","--run-name=vary agents",
-            f"--exp-name=min_a_{min_agents}-max_a_{max_agents}-min_s_{min_sensors}-max_s_{max_sensors}", "--min-sensor-priority=1", "--total-timesteps=10000000",
+min_agents, max_agents = (2, 3)
+min_sensors, max_sensors = (12, 12)
+for use_phantom_agents in [True, False]:
+    for critic_use_active_agents in [True, False]:
+        experiments.append([
+            "python", "main.py",
+            f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
+            f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
+            "--run-name=agent scale bench",
+            f"--exp-name=active_agents {critic_use_active_agents}-phantom_agents{use_phantom_agents}",
+            f"--use-phantom-agents={use_phantom_agents}",
+            f"--critic-use-active-agents={critic_use_active_agents}",
+            "--min-sensor-priority=1", "--total-timesteps=10000000",
             "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
             "--actor-learning-rate=0.00001", "--critic-learning-rate=0.00001", 
-            f"--state-num-closest-drones=7", f"--state-num-closest-sensors=36",
+            f"--state-num-closest-drones=2", f"--state-num-closest-sensors=12",
             "--reward=punish", "--no-end-when-all-collected"])
 
 
