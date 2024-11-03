@@ -99,8 +99,10 @@ class Args:
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
-    min_num_drones: int = 4
+    min_num_drones: int = 2
     max_num_drones: int = 4
+    use_phantom_agents: bool = True
+    """if toggled, phantom agents will be used when the number of agents is less than the max"""
     min_num_sensors: int = 5
     max_num_sensors: int = 5
     scenario_size: float = 100
@@ -328,6 +330,17 @@ def main():
 
         print("Checkpoint evaluation done")
 
+    def stack_all_agent_information(information: dict[str, np.ndarray]) -> np.ndarray:
+        if args.use_phantom_agents:
+            all_possible_agents = [f"drone{i}" for i in range(args.max_num_drones)]
+            available_agents = list(information.keys())
+            all_agent_information = np.stack([information.get(agent, information[random.choice(available_agents)]) for agent in all_possible_agents])
+        else:
+            all_agent_information = np.stack([information[agent] for agent in env.agents])
+            all_agent_information = np.pad(all_agent_information, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
+                                           mode='constant', constant_values=0)
+        return all_agent_information
+
     # TRY NOT TO MODIFY: start the game
     env = make_env()
     terminated = True
@@ -337,23 +350,21 @@ def main():
         if terminated:
             env = make_env()
             obs, _ = env.reset(seed=args.seed)
-            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
-            all_agent_obs = np.pad(all_agent_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=0)
+            all_agent_obs = stack_all_agent_information(obs)
             terminated = False
 
         if args.use_heuristics:
             actions = {
                 agent: heuristics(obs[agent]) for agent in env.agents
             }
-            all_agent_actions = np.stack([actions[agent] for agent in env.agents])
+            all_agent_actions = stack_all_agent_information(actions)
         else:
             # ALGO LOGIC: put action logic here
             if global_step < args.learning_starts:
                 actions = {
                     agent: action_space.sample() for agent in env.agents
                 }
-                all_agent_actions = np.stack([actions[agent] for agent in env.agents])
+                all_agent_actions = stack_all_agent_information(actions)
             else:
                 with torch.no_grad():
                     actions = {}
@@ -367,10 +378,7 @@ def main():
                                       torch.tensor(action_space.high, device=device))
                     for index, agent in enumerate(env.agents):
                         actions[agent] = all_actions[index].cpu().numpy()
-                    all_agent_actions = np.stack([actions[agent] for agent in env.agents])
-
-        all_agent_actions = np.pad(all_agent_actions, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=0)
+                    all_agent_actions = stack_all_agent_information(actions)
 
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
@@ -391,14 +399,10 @@ def main():
 
         if args.use_heuristics:
             obs = next_obs
-            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
-            all_agent_obs = np.pad(all_agent_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=0)
+            all_agent_obs = stack_all_agent_information(obs)
         else:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-            all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
-            all_agent_next_obs = np.pad(all_agent_next_obs, ((0, args.max_num_drones - len(env.agents)), (0, 0)),
-                                   mode='constant', constant_values=0)
+            all_agent_next_obs = stack_all_agent_information(next_obs)
 
             experience = TensorDict({
                 "state": all_agent_obs,
