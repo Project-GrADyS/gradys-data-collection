@@ -21,11 +21,11 @@ class Args:
 experiments = [
 ]
 
-for agents in [8]:
+for agents in [3]:
     for sensors in [12]:
-        experiments.append(["python", "main.py", f"--num-drones={agents}", f"--num-sensors={sensors}", "--run-name=results", 
+        experiments.append(["python", "main.py", f"--num-drones={agents}", f"--num-sensors={sensors}", "--run-name=3 agent results",
             f"--exp-name=a_{agents}-s_{sensors}", "--min-sensor-priority=1", "--total-timesteps=50000000", 
-            "--checkpoint-freq=100000", "--algorithm-iteration-interval=2", 
+            "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
             "--actor-learning-rate=0.00001", "--critic-learning-rate=0.00001", 
             f"--state-num-closest-drones={agents-1}", f"--state-num-closest-sensors=12", 
             "--reward=punish", "--no-end-when-all-collected"])
