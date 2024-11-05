@@ -9,6 +9,7 @@ import tyro
 class Args:
     concurrency: int = 3
 
+
 # Commands:
 # python main.py --num-drones=2 --num-sensors=2 --run-name=centralized-critic --exp-name=yes --state_num_closest_sensors=2 --state-num-closest-drones=1 --min-sensor-priority=1 --centralized_critic --total-timesteps=10000000
 
@@ -21,26 +22,25 @@ class Args:
 experiments = [
 ]
 
-min_agents, max_agents = (2, 3)
-min_sensors, max_sensors = (12, 12)
-for use_phantom_agents in [True, False]:
-    for critic_use_active_agents in [True, False]:
-        experiments.append([
-            "python", "main.py",
-            f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
-            f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
-            "--run-name=agent scale bench",
-            f"--exp-name=active_agents {critic_use_active_agents}-phantom_agents{use_phantom_agents}",
-            f"--use-phantom-agents={use_phantom_agents}",
-            f"--critic-use-active-agents={critic_use_active_agents}",
-            "--min-sensor-priority=1", "--total-timesteps=10000000",
-            "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
-            "--actor-learning-rate=0.00001", "--critic-learning-rate=0.00001", 
-            f"--state-num-closest-drones=2", f"--state-num-closest-sensors=12",
-            "--reward=punish", "--no-end-when-all-collected"])
+min_agents, max_agents = (2, 8)
+min_sensors, max_sensors = (12, 36)
 
+experiments.append([
+    "python", "main.py",
+    f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
+    f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
+    "--run-name=longer benchmark",
+    f"--exp-name=long 2-8 agents 12-36 sensors",
+    f"--use-phantom-agents",
+    f"--no-critic-use-active-agents",
+    "--min-sensor-priority=1", "--total-timesteps=10000000",
+    "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
+    "--actor-learning-rate=0.00001", "--critic-learning-rate=0.00001",
+    f"--state-num-closest-drones=2", f"--state-num-closest-sensors=12",
+    "--reward=punish", "--no-end-when-all-collected"])
 
 print("Total experiments: ", len(experiments))
+
 
 def run_experiment(experiment):
     print("Running experiment: ", experiment)
@@ -49,6 +49,6 @@ def run_experiment(experiment):
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
-    
+
     pool = multiprocessing.Pool(processes=args.concurrency)
     pool.map(run_experiment, experiments)
