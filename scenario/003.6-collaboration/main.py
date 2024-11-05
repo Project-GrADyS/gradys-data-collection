@@ -290,16 +290,15 @@ def main():
                     info = infos[env.agents[0]]
 
                     n_agents = temp_env.num_drones
-                    n_sensors = temp_env.num_sensors
 
-                    sum_avg_reward[(n_agents, n_sensors)] += info["avg_reward"]
-                    sum_max_reward[(n_agents, n_sensors)] += info["max_reward"]
-                    sum_sum_reward[(n_agents, n_sensors)] += info["sum_reward"]
-                    sum_episode_duration[(n_agents, n_sensors)] += info["episode_duration"]
-                    sum_avg_collection_time[(n_agents, n_sensors)] += info["avg_collection_time"]
-                    sum_all_collected[(n_agents, n_sensors)] += info["all_collected"]
-                    sum_completion_time[(n_agents, n_sensors)] += info["completion_time"]
-                    eval_runs_per_config[(n_agents, n_sensors)] += 1
+                    sum_avg_reward[n_agents] += info["avg_reward"]
+                    sum_max_reward[n_agents] += info["max_reward"]
+                    sum_sum_reward[n_agents] += info["sum_reward"]
+                    sum_episode_duration[n_agents] += info["episode_duration"]
+                    sum_avg_collection_time[n_agents] += info["avg_collection_time"]
+                    sum_all_collected[n_agents] += info["all_collected"]
+                    sum_completion_time[n_agents] += info["completion_time"]
+                    eval_runs_per_config[n_agents] += 1
                     break
             temp_env.close()
         
@@ -339,40 +338,40 @@ def main():
             global_step,
         )
 
-        for n_a, n_s in sum_avg_reward.keys():
+        for n_a in sum_avg_reward.keys():
             writer.add_scalar(
-                f"eval/avg_reward_agents-{n_a}_sensors-{n_s}",
-                sum_avg_reward[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/avg_reward_agents",
+                sum_avg_reward[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
             writer.add_scalar(
-                f"eval/max_reward_agents-{n_a}_sensors-{n_s}",
-                sum_max_reward[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/max_reward_agents",
+                sum_max_reward[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
             writer.add_scalar(
-                f"eval/sum_reward_agents-{n_a}_sensors-{n_s}",
-                sum_sum_reward[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/sum_reward_agents",
+                sum_sum_reward[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
             writer.add_scalar(
-                f"eval/episode_duration_agents-{n_a}_sensors-{n_s}",
-                sum_episode_duration[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/episode_duration_agents",
+                sum_episode_duration[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
             writer.add_scalar(
-                f"eval/avg_collection_time_agents-{n_a}_sensors-{n_s}",
-                sum_avg_collection_time[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/avg_collection_time_agents",
+                sum_avg_collection_time[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
             writer.add_scalar(
-                f"eval/all_collected_rate_agents-{n_a}_sensors-{n_s}",
-                sum_all_collected[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/all_collected_rate_agents",
+                sum_all_collected[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
             writer.add_scalar(
-                f"eval/completion_time_agents-{n_a}_sensors-{n_s}",
-                sum_completion_time[(n_a, n_s)] / eval_runs_per_config[(n_a, n_s)],
+                f"eval/{n_a} agents/completion_time_agents",
+                sum_completion_time[n_a] / eval_runs_per_config[n_a],
                 global_step,
             )
 
@@ -446,17 +445,16 @@ def main():
             info = infos[env.agents[0]]
 
             num_agents = env.num_drones
-            num_sensors = env.num_sensors
 
-            all_avg_reward[(num_agents, num_sensors)] += info["avg_reward"]
-            all_max_reward[(num_agents, num_sensors)] += info["max_reward"]
-            all_sum_reward[(num_agents, num_sensors)] += info["sum_reward"]
-            all_episode_duration[(num_agents, num_sensors)] += info["episode_duration"]
-            all_avg_collection_times[(num_agents, num_sensors)] += info["avg_collection_time"]
-            all_collected_count[(num_agents, num_sensors)] += info["all_collected"]
-            all_completion_times[(num_agents, num_sensors)] += info["completion_time"]
+            all_avg_reward[num_agents] += info["avg_reward"]
+            all_max_reward[num_agents] += info["max_reward"]
+            all_sum_reward[num_agents] += info["sum_reward"]
+            all_episode_duration[num_agents] += info["episode_duration"]
+            all_avg_collection_times[num_agents] += info["avg_collection_time"]
+            all_collected_count[num_agents] += info["all_collected"]
+            all_completion_times[num_agents] += info["completion_time"]
 
-            runs_per_configuration[(num_agents, num_sensors)] += 1
+            runs_per_configuration[num_agents] += 1
 
         if args.use_heuristics:
             obs = next_obs
@@ -563,40 +561,40 @@ def main():
                 global_step,
             )
 
-            for n_a, n_s in all_avg_reward.keys():
+            for n_a in all_avg_reward.keys():
                 writer.add_scalar(
-                    f"charts/avg_reward_agents-{n_a}_sensors-{n_s}",
-                    all_avg_reward[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/avg_reward_agents",
+                    all_avg_reward[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
                 writer.add_scalar(
-                    f"charts/max_reward_agents-{n_a}_sensors-{n_s}",
-                    all_max_reward[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/max_reward_agents",
+                    all_max_reward[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
                 writer.add_scalar(
-                    f"charts/sum_reward_agents-{n_a}_sensors-{n_s}",
-                    all_sum_reward[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/sum_reward_agents",
+                    all_sum_reward[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
                 writer.add_scalar(
-                    f"charts/episode_duration_agents-{n_a}_sensors-{n_s}",
-                    all_episode_duration[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/episode_duration_agents",
+                    all_episode_duration[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
                 writer.add_scalar(
-                    f"charts/avg_collection_time_agents-{n_a}_sensors-{n_s}",
-                    all_avg_collection_times[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/avg_collection_time_agents",
+                    all_avg_collection_times[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
                 writer.add_scalar(
-                    f"charts/all_collected_rate_agents-{n_a}_sensors-{n_s}",
-                    all_collected_count[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/all_collected_rate_agents",
+                    all_collected_count[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
                 writer.add_scalar(
-                    f"charts/completion_time_agents-{n_a}_sensors-{n_s}",
-                    all_completion_times[(n_a, n_s)] / runs_per_configuration[(n_a, n_s)],
+                    f"charts/{n_a} agents/completion_time_agents",
+                    all_completion_times[n_a] / runs_per_configuration[n_a],
                     global_step,
                 )
 
