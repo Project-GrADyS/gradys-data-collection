@@ -47,6 +47,8 @@ class Args:
     """whether to save model checkpoints"""
     checkpoint_freq: int = 1_000_000
     """the frequency of checkpoints"""
+    checkpoint_model_freq: int = 10
+    """every checkpoint_model_freq checkpoints the model will be saved"""
     checkpoint_visual_evaluation: bool = False
     """whether to visually evaluate the model at each checkpoint"""
     statistics_frequency: float = 10_000
@@ -245,11 +247,12 @@ def main():
 
     start_time = time.time()
 
-    def evaluate_checkpoint():
+    def evaluate_checkpoint(save_movel: bool):
         print("Reached checkpoint at step", global_step)
         model_path = f"runs/{run_name}/{args.exp_name}-checkpoint{global_step // 10_000}.cleanrl_model"
-        torch.save((actor.state_dict(), qf1.state_dict()), model_path)
-        print(f"model saved to {model_path}")
+        if save_movel:
+            torch.save((actor.state_dict(), qf1.state_dict()), model_path)
+            print(f"model saved to {model_path}")
 
         actor.eval()
         target_actor.eval()
@@ -266,10 +269,10 @@ def main():
 
         eval_runs_per_config = defaultdict(lambda: 0)
 
-        evaluation_runs = 200
+        evaluation_runs = 50
         for i in range(evaluation_runs):
-            if i % 100 == 0:
-                print(f"Evaluating model ({i+1}/{evaluation_runs})")
+            if i % 10 == 0:
+                print(f"Evaluating model ({i}/{evaluation_runs})")
             temp_env = make_env(True)
             temp_obs, _ = temp_env.reset(seed=args.seed)
             while True:
@@ -301,6 +304,8 @@ def main():
                     eval_runs_per_config[n_agents] += 1
                     break
             temp_env.close()
+
+        print(f"Evaluating model ({evaluation_runs}/{evaluation_runs})")
         
         writer.add_scalar(
             "eval/avg_reward",
@@ -601,9 +606,9 @@ def main():
             print(f"{args.exp_name} - SPS:", global_step / (time.time() - start_time))
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
-            evaluate_checkpoint()
+            evaluate_checkpoint((global_step / args.checkpoint_freq) % args.checkpoint_model_freq == 0)
 
-    evaluate_checkpoint()
+    evaluate_checkpoint(True)
     env.close()
     writer.close()
 
