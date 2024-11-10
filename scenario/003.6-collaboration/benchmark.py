@@ -22,25 +22,26 @@ class Args:
 experiments = [
 ]
 
-min_agents, max_agents = (2, 8)
-min_sensors, max_sensors = (12, 36)
+min_agents, max_agents = (1, 2)
+min_sensors, max_sensors = (12, 12)
 
-experiments.append([
-    "python", "main.py",
-    f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
-    f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
-    "--run-name=longer benchmark",
-    f"--exp-name=long 2-8 agents 12-36 sensors",
-    f"--use-phantom-agents",
-    f"--no-critic-use-active-agents",
-    "--min-sensor-priority=1", "--total-timesteps=10000000",
-    "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
-    "--actor-learning-rate=0.00001", "--critic-learning-rate=0.00001",
-    f"--state-num-closest-drones=2", f"--state-num-closest-sensors=12",
-    "--reward=punish", "--no-end-when-all-collected"])
+for lr in [1e-3, 1e-4, 1e-5, 1e-6]:
+    experiments.append([
+        "python", "main.py",
+        f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
+        f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
+        "--run-name=lr bench",
+        f"--exp-name=lr-{lr}",
+        f"--use-phantom-agents",
+        f"--critic-use-active-agents",
+        f"--no-use-priority",
+        "--min-sensor-priority=1", "--total-timesteps=1000000",
+        "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
+        f"--actor-learning-rate={lr}", f"--critic-learning-rate={lr}",
+        f"--state-num-closest-drones=1", f"--state-num-closest-sensors=12",
+        "--reward=punish", "--no-end-when-all-collected"])
 
 print("Total experiments: ", len(experiments))
-
 
 def run_experiment(experiment):
     print("Running experiment: ", experiment)
