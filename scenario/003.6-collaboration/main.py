@@ -75,6 +75,8 @@ class Args:
     """target smoothing coefficient (default: 0.005)"""
     batch_size: int = 256
     """the batch size of sample from the reply memory"""
+    use_priority: bool = False
+    """if toggled, the replay buffer will use priority sampling"""
     exploration_noise: float = 0.1
     """the scale of exploration noise"""
     learning_starts: int = 25e3
@@ -237,13 +239,17 @@ def main():
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.critic_learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.actor_learning_rate)
 
-    replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
-                                           storage=LazyTensorStorage(args.buffer_size, device=device))
-                                           # sampler=PrioritizedSampler(args.buffer_size,
-                                           #                            alpha=experience_args.priority_alpha,
-                                           #                            beta=experience_args.priority_beta),
-                                           # prefetch=10,
-                                           # priority_key="priority")
+    if args.use_priority:
+        replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
+                                               storage=LazyTensorStorage(args.buffer_size, device=device),
+                                               sampler=PrioritizedSampler(args.buffer_size,
+                                                                          alpha=0.6,
+                                                                          beta=0.9),
+                                               prefetch=10,
+                                               priority_key="priority")
+    else:
+        replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
+                                               storage=LazyTensorStorage(args.buffer_size, device=device))
 
     start_time = time.time()
 
@@ -507,6 +513,10 @@ def main():
             q_optimizer.zero_grad()
             qf1_loss.backward()
             q_optimizer.step()
+
+            if args.use_priority:
+                samples['priority'] = qf1_loss.expand(args.batch_size)
+                replay_buffer.update_tensordict_priority(samples)
 
             if global_step % args.policy_frequency == 0:
                 actor_actions = actor(samples["state"]).view(samples["state"].shape[0], -1)
