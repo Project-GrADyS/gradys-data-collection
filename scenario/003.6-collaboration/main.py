@@ -77,6 +77,8 @@ class Args:
     """the batch size of sample from the reply memory"""
     use_priority: bool = False
     """if toggled, the replay buffer will use priority sampling"""
+    priority_alpha: float = 0.7
+    priority_beta: float = 1
     exploration_noise: float = 0.1
     """the scale of exploration noise"""
     learning_starts: int = 25e3
@@ -243,8 +245,8 @@ def main():
         replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
                                                storage=LazyTensorStorage(args.buffer_size, device=device),
                                                sampler=PrioritizedSampler(args.buffer_size,
-                                                                          alpha=0.6,
-                                                                          beta=0.9),
+                                                                          alpha=args.priority_alpha,
+                                                                          beta=args.priority_beta),
                                                prefetch=10,
                                                priority_key="priority")
     else:
