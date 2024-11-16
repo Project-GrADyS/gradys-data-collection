@@ -22,23 +22,25 @@ class Args:
 experiments = [
 ]
 
-min_agents, max_agents = (1, 2)
-min_sensors, max_sensors = (12, 12)
+min_agents, max_agents = (2, 8)
+min_sensors, max_sensors = (12, 36)
+lr = 1e-5
 
-for lr in [1e-3, 1e-4, 1e-5, 1e-6]:
+for alpha, beta in [(0.2, 0.4), (0.7, 1)]:
     experiments.append([
         "python", "main.py",
         f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
         f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
-        "--run-name=lr bench",
-        f"--exp-name=lr-{lr}",
+        "--run-name=longer priority bench",
+        f"--exp-name=alpha-{alpha}_beta-{beta}",
         f"--use-phantom-agents",
         f"--critic-use-active-agents",
-        f"--no-use-priority",
-        "--min-sensor-priority=1", "--total-timesteps=1000000",
+        f"--use-priority",
+        f"--priority-alpha={alpha}", f"--priority-beta={beta}",
+        "--min-sensor-priority=1", "--total-timesteps=100000000",
         "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
         f"--actor-learning-rate={lr}", f"--critic-learning-rate={lr}",
-        f"--state-num-closest-drones=1", f"--state-num-closest-sensors=12",
+        f"--state-num-closest-drones=7", f"--state-num-closest-sensors=12",
         "--reward=punish", "--no-end-when-all-collected"])
 
 print("Total experiments: ", len(experiments))
