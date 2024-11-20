@@ -25,10 +25,10 @@ class EnvironmentArgs(Tap):
     max_seconds_stalled: int = 30
     end_when_all_collected: bool = False
     min_drone_count: int = 2
-    max_drone_count: int = 2
+    max_drone_count: int = 3
     min_sensor_count: int = 12
     max_sensor_count: int = 12
-    progressive_scaling: bool = False
+    progressive_scaling: bool = True
     progressive_scaling_confidence: int = 10
     progressive_scaling_cutoff: float = 0.9
     scenario_size: float = 100
@@ -67,7 +67,7 @@ class ActorArgs(Tap):
     actor_statistics_frequency: int = 10_000
 
 class CoordinationArgs(Tap):
-    num_actors: int = 8
+    num_actors: int = 1
     """number of actors collecting experiences"""
 
 class LearnerArgs(Tap):
