@@ -34,7 +34,7 @@ for use_distributional in [True, False]:
         f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
         "--run-name=longer priority bench",
         f"--exp-name=use_distributional" if use_distributional else f"--exp-name=no_distributional",
-        f"--use-distributional-critic" if use_distributional else f"--no-distributional-critic",
+        f"--use-distributional-critic" if use_distributional else f"--no-use-distributional-critic",
         f"--use-phantom-agents",
         f"--critic-use-active-agents",
         f"--use-priority",
