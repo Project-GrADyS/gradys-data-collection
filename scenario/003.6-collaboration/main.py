@@ -13,9 +13,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
-from stable_baselines3.common.buffers import ReplayBuffer
 from tensordict import TensorDict
-from torch.nn import ZeroPad1d
 from torch.utils.tensorboard import SummaryWriter
 from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage, PrioritizedSampler
 
@@ -117,6 +115,12 @@ class Args:
     max_sensor_priority: float = 1.0
     full_random_drone_position: bool = False
 
+    # Distributional options
+    use_distributional_critic: bool = False
+    num_atoms: int = 51
+    v_min: int = -10
+    v_max: int = 10
+
     reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
 
     speed_action: bool = True
@@ -127,7 +131,7 @@ class Args:
     use_heuristics: None | Literal['greedy', 'random'] = None
 
 args = tyro.cli(Args)
-
+device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
 def make_env(evaluation=False, max_possible=False):
     num_sensors = random.randint(args.min_num_sensors, args.max_num_sensors) if not max_possible else args.max_num_sensors
@@ -162,14 +166,20 @@ class Critic(nn.Module):
             np.array(observation_space.shape).prod() * args.max_num_drones + np.prod(action_space.shape) * args.max_num_drones + args.critic_use_active_agents,
             args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
-        self.fc3 = nn.Linear(args.critic_model_size, 1)
+        self.fc3 = nn.Linear(args.critic_model_size, args.num_atoms if args.use_distributional_critic else 1)
 
-    def forward(self, x, a, active_agents):
+    def forward(self, x, a, active_agents, log=False):
         x = torch.cat([x, a, active_agents] if args.critic_use_active_agents else [x, a], 1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
-        return x
+        if args.use_distributional_critic:
+            if log:
+                return F.log_softmax(x, dim=-1)
+            else:
+                return F.softmax(x, dim=-1)
+        else:
+            return x
 
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
@@ -199,6 +209,41 @@ if args.use_heuristics == 'random':
 run_name = f"{args.run_name}/{args.exp_name}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{run_name}")
 
+# Adapted from: https://github.com/Remtasya/Distributional-Multi-Agent-Actor-Critic-Reinforcement-Learning-MADDPG-Tennis-Environment
+atoms = torch.linspace(args.v_min, args.v_max, args.num_atoms, device=device).unsqueeze(0)
+def to_categorical(rewards, probs, dones):
+    """
+    Credit to Matt Doll and Shangtong Zhang for this function:
+    https://github.com/whiterabbitobj
+    https://github.com/ShangtongZhang
+    """
+    # this is the increment between atoms
+    delta_z = (args.v_max - args.v_min) / (args.num_atoms - 1)
+
+    # projecting the rewards to the atoms
+    projected_atoms = rewards.unsqueeze(-1) + args.gamma * atoms * (1 - dones.unsqueeze(-1))
+    projected_atoms.clamp_(args.v_min,
+                           args.v_max)  # vmin/vmax are arbitary so any observations falling outside this range will be cliped
+    b = (projected_atoms - args.v_min) / delta_z
+
+    # precision is reduced to prevent e.g 99.00000...ceil() evaluating to 100 instead of 99.
+    precision = 1
+    b = torch.round(b * 10 ** precision) / 10 ** precision
+    lower_bound = b.floor()
+    upper_bound = b.ceil()
+
+    m_lower = (upper_bound + (lower_bound == upper_bound).float() - b) * probs
+    m_upper = (b - lower_bound) * probs
+
+    # initialising projected_probs
+    projected_probs = torch.tensor(np.zeros(probs.size())).to(device)
+
+    # a bit like one-hot encoding but for the specified atoms
+    for idx in range(probs.size(0)):
+        projected_probs[idx].index_add_(0, lower_bound[idx].long(), m_lower[idx].double())
+        projected_probs[idx].index_add_(0, upper_bound[idx].long(), m_upper[idx].double())
+    return projected_probs.float()
+
 def main():
     writer.add_text(
         "hyperparameters",
@@ -222,8 +267,6 @@ def main():
     np.random.seed(args.seed)
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
-
-    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
 
     # env setup
     max_env = make_env(max_possible=True)
@@ -493,23 +536,27 @@ def main():
             # ALGO LOGIC: training.
             if global_step <= args.learning_starts:
                 continue
-            
-            training_step_count = args.max_num_drones if args.train_once_for_each_agent else 1
+
             samples = replay_buffer.sample()
-
-
 
             with torch.no_grad():
                 next_actions = target_actor(samples["next_state"]).view(samples["next_state"].shape[0], -1)
                 next_state = samples["next_state"].reshape(samples["next_state"].shape[0], -1)
                 qf1_next_target = qf1_target(next_state, next_actions, samples["active_agents"])
-                next_q_value = samples["reward"].flatten() + (1 - samples["done"].flatten()) * args.gamma * (
-                    qf1_next_target).view(-1)
+                if args.use_distributional_critic:
+                    next_q_value = to_categorical(samples["reward"], qf1_next_target, samples["done"])
+                else:
+                    next_q_value = samples["reward"].flatten() + (1 - samples["done"].flatten()) * args.gamma * (
+                        qf1_next_target).view(-1)
 
             current_state = samples["state"].reshape(samples["state"].shape[0], -1)
             all_actions = samples["actions"].reshape(samples["actions"].shape[0], -1)
-            qf1_a_values = qf1(current_state, all_actions, samples["active_agents"]).view(-1)
-            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+            if args.use_distributional_critic:
+                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"], log=True)
+                qf1_loss = -(next_q_value * qf1_a_values).sum(-1).mean()
+            else:
+                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"]).view(-1)
+                qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
             # optimize the model
             q_optimizer.zero_grad()

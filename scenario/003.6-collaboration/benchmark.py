@@ -24,15 +24,17 @@ experiments = [
 
 min_agents, max_agents = (2, 8)
 min_sensors, max_sensors = (12, 36)
-lr = 1e-5
+alpha, beta = (0.7, 1)
+lr = 1e-7
 
-for alpha, beta in [(0.2, 0.4), (0.7, 1)]:
+for use_distributional in [True, False]:
     experiments.append([
         "python", "main.py",
         f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
         f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
         "--run-name=longer priority bench",
-        f"--exp-name=alpha-{alpha}_beta-{beta}",
+        f"--exp-name=use_distributional" if use_distributional else f"--exp-name=no_distributional",
+        f"--use-distributional-critic" if use_distributional else f"--no-distributional-critic",
         f"--use-phantom-agents",
         f"--critic-use-active-agents",
         f"--use-priority",
