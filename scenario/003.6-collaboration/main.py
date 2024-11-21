@@ -239,9 +239,9 @@ def to_categorical(rewards, probs, dones):
     projected_probs = torch.tensor(np.zeros(probs.size())).to(device)
 
     # a bit like one-hot encoding but for the specified atoms
-    for idx in range(probs.size(0)):
-        projected_probs[idx].index_add_(0, lower_bound[idx].long(), m_lower[idx].double())
-        projected_probs[idx].index_add_(0, upper_bound[idx].long(), m_upper[idx].double())
+    projected_probs.scatter_add_(1, lower_bound.long(), m_lower.double())
+    projected_probs.scatter_add_(1, upper_bound.long(), m_upper.double())
+
     return projected_probs.float()
 
 def main():
