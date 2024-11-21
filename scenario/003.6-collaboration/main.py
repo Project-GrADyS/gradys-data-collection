@@ -569,8 +569,12 @@ def main():
 
             if global_step % args.policy_frequency == 0:
                 actor_actions = actor(samples["state"]).view(samples["state"].shape[0], -1)
-
-                actor_loss = -qf1(current_state, actor_actions, samples["active_agents"]).mean()
+                if args.use_distributional_critic:
+                    critic_probs = qf1(samples["state"].reshape(samples["state"].shape[0], -1), actor_actions, samples["active_agents"])
+                    expected_reward = (atoms * critic_probs).sum(-1)
+                    actor_loss = -expected_reward.mean()
+                else:
+                    actor_loss = -qf1(current_state, actor_actions, samples["active_agents"]).mean()
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
                 actor_optimizer.step()
