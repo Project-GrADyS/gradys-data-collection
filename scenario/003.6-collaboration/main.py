@@ -236,11 +236,11 @@ def to_categorical(rewards, probs, dones):
     m_upper = (b - lower_bound) * probs
 
     # initialising projected_probs
-    projected_probs = torch.tensor(np.zeros(probs.size())).to(device)
+    projected_probs = torch.zeros_like(probs, device=device, dtype=torch.float32)
 
     # a bit like one-hot encoding but for the specified atoms
-    projected_probs.scatter_add_(1, lower_bound.long(), m_lower.double())
-    projected_probs.scatter_add_(1, upper_bound.long(), m_upper.double())
+    projected_probs.scatter_add_(1, lower_bound.long(), m_lower.float())
+    projected_probs.scatter_add_(1, upper_bound.long(), m_upper.float())
 
     return projected_probs.float()
 
@@ -286,7 +286,7 @@ def main():
 
     if args.use_priority:
         replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
-                                               storage=LazyTensorStorage(args.buffer_size, device=device),
+                                               storage=LazyTensorStorage(args.buffer_size),
                                                sampler=PrioritizedSampler(args.buffer_size,
                                                                           alpha=args.priority_alpha,
                                                                           beta=args.priority_beta),
@@ -526,7 +526,7 @@ def main():
                 "next_state": all_agent_next_obs,
                 "done": int(terminations[env.agents[0]]),
                 "active_agents": [len(env.agents) / args.max_num_drones]
-            }, device=device).to(torch.float32)
+            }).to(torch.float32)
             replay_buffer.add(experience)
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
@@ -537,7 +537,9 @@ def main():
             if global_step <= args.learning_starts:
                 continue
 
-            samples = replay_buffer.sample()
+            replay = replay_buffer.sample()
+            samples = replay.to(device)
+
 
             with torch.no_grad():
                 next_actions = target_actor(samples["next_state"]).view(samples["next_state"].shape[0], -1)
@@ -564,8 +566,8 @@ def main():
             q_optimizer.step()
 
             if args.use_priority:
-                samples['priority'] = qf1_loss.expand(args.batch_size)
-                replay_buffer.update_tensordict_priority(samples)
+                replay['priority'] = qf1_loss.expand(args.batch_size)
+                replay_buffer.update_tensordict_priority(replay)
 
             if global_step % args.policy_frequency == 0:
                 actor_actions = actor(samples["state"]).view(samples["state"].shape[0], -1)
