@@ -2,6 +2,7 @@
 import os
 import random
 import time
+import typing
 from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
@@ -13,9 +14,10 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
-from tensordict import TensorDict
+from tensordict import TensorDict, TensorDictBase
 from torch.utils.tensorboard import SummaryWriter
-from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage, PrioritizedSampler
+from torchrl.data import LazyTensorStorage, PrioritizedSliceSampler, \
+    SliceSampler, PrioritizedSampler, TensorDictReplayBuffer, RandomSampler
 
 from environment import GrADySEnvironment, StateMode
 from heuristics import create_greedy_heuristics, create_random_heuristics
@@ -121,6 +123,9 @@ class Args:
     v_min: int = -10
     v_max: int = 10
 
+    # Trajectory options
+    trajectory_length: int = 1
+
     reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
 
     speed_action: bool = True
@@ -163,7 +168,9 @@ class Critic(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
         self.fc1 = nn.Linear(
-            np.array(observation_space.shape).prod() * args.max_num_drones + np.prod(action_space.shape) * args.max_num_drones + args.critic_use_active_agents,
+            (np.array(observation_space.shape).prod() * args.max_num_drones +
+             np.prod(
+                 action_space.shape) * args.max_num_drones + args.critic_use_active_agents) * args.trajectory_length,
             args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, args.num_atoms if args.use_distributional_critic else 1)
@@ -251,7 +258,7 @@ def main():
     )
 
     # Statistics
-    episode_count = 0
+    episode_count = 1
     all_collected_count = defaultdict(lambda: 0)
     all_avg_collection_times = defaultdict(lambda: 0)
     all_avg_reward = defaultdict(lambda: 0)
@@ -279,22 +286,35 @@ def main():
     qf1 = Critic(action_space, observation_space).to(device)
     qf1_target = Critic(action_space, observation_space).to(device)
     target_actor = Actor(action_space, observation_space).to(device)
+
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.critic_learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.actor_learning_rate)
 
     if args.use_priority:
-        replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
-                                               storage=LazyTensorStorage(args.buffer_size),
-                                               sampler=PrioritizedSampler(args.buffer_size,
-                                                                          alpha=args.priority_alpha,
-                                                                          beta=args.priority_beta),
-                                               prefetch=10,
-                                               priority_key="priority")
+        if args.trajectory_length > 1:
+            sampler = PrioritizedSliceSampler(args.buffer_size,
+                                              alpha=args.priority_alpha,
+                                              beta=args.priority_beta,
+                                              traj_key="episode",
+                                              num_slices=args.batch_size // args.trajectory_length)
+        else:
+            sampler = PrioritizedSampler(args.buffer_size,
+                                         alpha=args.priority_alpha,
+                                         beta=args.priority_beta)
     else:
-        replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
-                                               storage=LazyTensorStorage(args.buffer_size, device=device))
+        if args.trajectory_length > 1:
+            sampler = SliceSampler(traj_key="episode",
+                                   num_slices=args.batch_size // args.trajectory_length)
+        else:
+            sampler = RandomSampler()
+
+    replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
+                                           storage=LazyTensorStorage(args.buffer_size),
+                                           sampler=sampler,
+                                           prefetch = 10,
+                                           priority_key = "priority")
 
     start_time = time.time()
 
@@ -357,7 +377,7 @@ def main():
             temp_env.close()
 
         print(f"Evaluating model ({evaluation_runs}/{evaluation_runs})")
-        
+
         writer.add_scalar(
             "eval/avg_reward",
             sum(sum_avg_reward.values()) / evaluation_runs,
@@ -462,6 +482,7 @@ def main():
             obs, _ = env.reset(seed=args.seed)
             all_agent_obs = stack_all_agent_information(obs)
             terminated = False
+            episode_count += 1
 
         if args.use_heuristics:
             actions = {
@@ -495,7 +516,6 @@ def main():
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
-            episode_count += 1
             terminated = True
 
             info = infos[env.agents[0]]
@@ -525,7 +545,8 @@ def main():
                 "reward": rewards[env.agents[0]],
                 "next_state": all_agent_next_obs,
                 "done": int(terminations[env.agents[0]]),
-                "active_agents": [len(env.agents) / args.max_num_drones]
+                "active_agents": [len(env.agents) / args.max_num_drones],
+                "episode": episode_count,
             }).to(torch.float32)
             replay_buffer.add(experience)
 
@@ -539,25 +560,32 @@ def main():
 
             replay = replay_buffer.sample()
             samples = replay.to(device)
+            samples = typing.cast(TensorDictBase, torch.stack(samples.split(args.trajectory_length)))
 
+            batch_dimension = samples["state"].shape[0]
 
             with torch.no_grad():
-                next_actions = target_actor(samples["next_state"]).view(samples["next_state"].shape[0], -1)
-                next_state = samples["next_state"].reshape(samples["next_state"].shape[0], -1)
-                qf1_next_target = qf1_target(next_state, next_actions, samples["active_agents"])
+                next_actions = target_actor(samples["next_state"]).view(batch_dimension, -1)
+                next_state = samples["next_state"].view(batch_dimension, -1)
+                qf1_next_target = qf1_target(next_state, next_actions,
+                                             samples["active_agents"].view(batch_dimension, -1)).view(batch_dimension,
+                                                                                                      -1)
                 if args.use_distributional_critic:
-                    next_q_value = to_categorical(samples["reward"], qf1_next_target, samples["done"])
+                    next_q_value = to_categorical(samples["reward"][:, -1], qf1_next_target, samples["done"][:, -1])
                 else:
-                    next_q_value = samples["reward"].flatten() + (1 - samples["done"].flatten()) * args.gamma * (
-                        qf1_next_target).view(-1)
+                    next_q_value = samples["reward"][:, -1].flatten() + (
+                            1 - samples["done"][:, -1].flatten()) * args.gamma * (
+                                       qf1_next_target).view(-1)
 
-            current_state = samples["state"].reshape(samples["state"].shape[0], -1)
-            all_actions = samples["actions"].reshape(samples["actions"].shape[0], -1)
+            current_state = samples["state"].reshape(batch_dimension, -1)
+            all_actions = samples["actions"].reshape(batch_dimension, -1)
             if args.use_distributional_critic:
-                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"], log=True)
+                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"].view(batch_dimension, -1),
+                                   log=True)
                 qf1_loss = -(next_q_value * qf1_a_values).sum(-1).mean()
             else:
-                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"]).view(-1)
+                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"].view(batch_dimension, -1)).view(
+                    -1)
                 qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
             # optimize the model
@@ -570,9 +598,10 @@ def main():
                 replay_buffer.update_tensordict_priority(replay)
 
             if global_step % args.policy_frequency == 0:
-                actor_actions = actor(samples["state"]).view(samples["state"].shape[0], -1)
+                actor_actions = actor(samples["state"]).view(batch_dimension, -1)
                 if args.use_distributional_critic:
-                    critic_probs = qf1(samples["state"].reshape(samples["state"].shape[0], -1), actor_actions, samples["active_agents"])
+                    critic_probs = qf1(samples["state"].reshape(batch_dimension, -1), actor_actions,
+                                       samples["active_agents"].view(batch_dimension, -1))
                     expected_reward = (atoms * critic_probs).sum(-1)
                     actor_loss = -expected_reward.mean()
                 else:
