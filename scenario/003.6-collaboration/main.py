@@ -168,9 +168,8 @@ class Critic(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
         self.fc1 = nn.Linear(
-            (np.array(observation_space.shape).prod() * args.max_num_drones +
-             np.prod(
-                 action_space.shape) * args.max_num_drones + args.critic_use_active_agents) * args.trajectory_length,
+            np.array(observation_space.shape).prod() * args.max_num_drones * args.trajectory_length +
+            np.prod(action_space.shape) * args.max_num_drones + args.critic_use_active_agents,
             args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, args.num_atoms if args.use_distributional_critic else 1)
@@ -188,10 +187,13 @@ class Critic(nn.Module):
         else:
             return x
 
+
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
-        self.fc1 = nn.Linear(np.array(observation_space.shape).prod(), args.actor_model_size)
+        self.fc1 = nn.Linear(np.array(observation_space.shape).prod() +
+                             np.array(observation_space.shape).prod() * (args.trajectory_length - 1)
+                             , args.actor_model_size)
         self.fc2 = nn.Linear(args.actor_model_size, args.actor_model_size)
         self.fc_mu = nn.Linear(args.actor_model_size, np.prod(action_space.shape))
         # action rescaling
@@ -202,11 +204,13 @@ class Actor(nn.Module):
             "action_bias", torch.tensor((action_space.high + action_space.low) / 2.0, dtype=torch.float32)
         )
 
-    def forward(self, x):
+    def forward(self, x, trajectory):
+        x = torch.cat([x, trajectory], -1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = torch.tanh(self.fc_mu(x))
         return x * self.action_scale + self.action_bias
+
 
 if args.use_heuristics == 'greedy':
     heuristics = create_greedy_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
@@ -218,6 +222,8 @@ writer = SummaryWriter(f"runs/{run_name}")
 
 # Adapted from: https://github.com/Remtasya/Distributional-Multi-Agent-Actor-Critic-Reinforcement-Learning-MADDPG-Tennis-Environment
 atoms = torch.linspace(args.v_min, args.v_max, args.num_atoms, device=device).unsqueeze(0)
+
+
 def to_categorical(rewards, probs, dones):
     """
     Credit to Matt Doll and Shangtong Zhang for this function:
@@ -346,16 +352,20 @@ def main():
                 print(f"Evaluating model ({i}/{evaluation_runs})")
             temp_env = make_env(True)
             temp_obs, _ = temp_env.reset(seed=args.seed)
+            eval_trajectory = np.stack(list(temp_obs.values()))[:, np.newaxis, :].repeat(args.trajectory_length - 1, 1)
             while True:
                 actions = {}
                 with torch.no_grad():
-                    for agent in temp_env.agents:
-                        if args.use_heuristics:
+                    if args.use_heuristics:
+                        for agent in temp_env.agents:
                             actions[agent] = heuristics(temp_obs[agent])
-                        else:
-                            actions[agent] = actor(torch.tensor(temp_obs[agent], device=device, dtype=torch.float32))
-                            actions[agent] += torch.normal(0, actor.action_scale * args.exploration_noise)
-                            actions[agent] = actions[agent].cpu().numpy().clip(action_space.low, action_space.high)
+                    else:
+                        all_actions = actor(
+                            torch.tensor(np.stack(list(temp_obs.values())), device=device, dtype=torch.float32),
+                            torch.tensor(eval_trajectory, device=device, dtype=torch.float32).flatten(1)
+                        ).cpu().numpy()
+                        for a_index, agent in enumerate(temp_env.agents):
+                            actions[agent] = all_actions[a_index]
 
                 next_obs, _, _, _, infos = temp_env.step(actions)
                 temp_obs = next_obs
@@ -474,6 +484,11 @@ def main():
     # TRY NOT TO MODIFY: start the game
     env = make_env()
     terminated = True
+
+    trajectory = {}
+    all_obs_tensor = torch.zeros((args.max_num_drones, *observation_space.shape),
+                                 device=device, dtype=torch.float32)
+
     for global_step in range(args.total_timesteps):
         step_start = time.time()
 
@@ -481,6 +496,9 @@ def main():
             env = make_env()
             obs, _ = env.reset(seed=args.seed)
             all_agent_obs = stack_all_agent_information(obs)
+
+            trajectory = np.stack(list(obs.values()))[:, np.newaxis, :].repeat(args.trajectory_length - 1, 1)
+
             terminated = False
             episode_count += 1
 
@@ -499,10 +517,12 @@ def main():
             else:
                 with torch.no_grad():
                     actions = {}
-                    all_obs = torch.tensor(all_agent_obs,
-                                           device=device,
-                                           dtype=torch.float32)
-                    all_actions: torch.Tensor = actor(all_obs)
+                    all_obs_np = np.stack(list(obs.values()))
+                    all_obs_tensor[:len(env.agents)] = torch.from_numpy(all_obs_np)
+                    all_trajectories = torch.tensor(trajectory,
+                                                    device=device,
+                                                    dtype=torch.float32).flatten(1)
+                    all_actions: torch.Tensor = actor(all_obs_tensor[:len(env.agents)], all_trajectories)
                     all_actions.add_(torch.normal(torch.zeros_like(all_actions, device=device),
                                                   actor.action_scale * args.exploration_noise))
                     all_actions.clip_(torch.tensor(action_space.low, device=device),
@@ -554,6 +574,9 @@ def main():
             obs = next_obs
             all_agent_obs = all_agent_next_obs
 
+            trajectory = np.roll(trajectory, -1, axis=1)
+            trajectory[:, -1, :] = np.stack(list(obs.values()))
+
             # ALGO LOGIC: training.
             if global_step <= args.learning_starts:
                 continue
@@ -564,12 +587,12 @@ def main():
 
             batch_dimension = samples["state"].shape[0]
 
-            with torch.no_grad():
-                next_actions = target_actor(samples["next_state"]).view(batch_dimension, -1)
+            with (torch.no_grad()):
+                next_actions = target_actor(samples["next_state"][:, -1], samples["state"][:, 1:].permute((0, 2, 1, 3)).flatten(2)).view(batch_dimension, -1)
                 next_state = samples["next_state"].view(batch_dimension, -1)
-                qf1_next_target = qf1_target(next_state, next_actions,
-                                             samples["active_agents"].view(batch_dimension, -1)).view(batch_dimension,
-                                                                                                      -1)
+                qf1_next_target = qf1_target(
+                    next_state, next_actions, samples["active_agents"][:, -1].view(batch_dimension, -1)
+                ).view(batch_dimension, -1)
                 if args.use_distributional_critic:
                     next_q_value = to_categorical(samples["reward"][:, -1], qf1_next_target, samples["done"][:, -1])
                 else:
@@ -578,13 +601,13 @@ def main():
                                        qf1_next_target).view(-1)
 
             current_state = samples["state"].reshape(batch_dimension, -1)
-            all_actions = samples["actions"].reshape(batch_dimension, -1)
+            all_actions = samples["actions"][:, -1].reshape(batch_dimension, -1)
             if args.use_distributional_critic:
-                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"].view(batch_dimension, -1),
+                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"][:, -1].view(batch_dimension, -1),
                                    log=True)
                 qf1_loss = -(next_q_value * qf1_a_values).sum(-1).mean()
             else:
-                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"].view(batch_dimension, -1)).view(
+                qf1_a_values = qf1(current_state, all_actions, samples["active_agents"][:, -1].view(batch_dimension, -1)).view(
                     -1)
                 qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
@@ -598,14 +621,14 @@ def main():
                 replay_buffer.update_tensordict_priority(replay)
 
             if global_step % args.policy_frequency == 0:
-                actor_actions = actor(samples["state"]).view(batch_dimension, -1)
+                actor_actions = actor(samples["state"][:, -1], samples["state"][:, :-1].permute((0, 2, 1, 3)).flatten(2)).view(batch_dimension, -1)
                 if args.use_distributional_critic:
                     critic_probs = qf1(samples["state"].reshape(batch_dimension, -1), actor_actions,
-                                       samples["active_agents"].view(batch_dimension, -1))
+                                       samples["active_agents"][:, -1].view(batch_dimension, -1))
                     expected_reward = (atoms * critic_probs).sum(-1)
                     actor_loss = -expected_reward.mean()
                 else:
-                    actor_loss = -qf1(current_state, actor_actions, samples["active_agents"]).mean()
+                    actor_loss = -qf1(current_state, actor_actions, samples["active_agents"][:, -1]).mean()
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
                 actor_optimizer.step()
