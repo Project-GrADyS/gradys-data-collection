@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 import gymnasium as gym
+import line_profiler
 import numpy as np
 import torch
 import torch.nn as nn
@@ -65,7 +66,7 @@ class Args:
     """the learning rate of the actor optimizer"""
     critic_learning_rate: float = 3e-6
     """the learning rate of the critic optimizer"""
-    critic_use_active_agents: bool = False
+    critic_use_active_agents: bool = True
     """if toggled, the critic will use the number of active agents as an input"""
     buffer_size: int = int(1e6)
     """the replay memory buffer size"""
@@ -75,13 +76,13 @@ class Args:
     """target smoothing coefficient (default: 0.005)"""
     batch_size: int = 256
     """the batch size of sample from the reply memory"""
-    use_priority: bool = False
+    use_priority: bool = True
     """if toggled, the replay buffer will use priority sampling"""
     priority_alpha: float = 0.7
     priority_beta: float = 1
     exploration_noise: float = 0.1
     """the scale of exploration noise"""
-    learning_starts: int = 25e3
+    learning_starts: int = 5000
     """timestep to start learning"""
     policy_frequency: int = 3
     """the frequency of training policy (delayed)"""
@@ -118,13 +119,13 @@ class Args:
     full_random_drone_position: bool = False
 
     # Distributional options
-    use_distributional_critic: bool = False
+    use_distributional_critic: bool = True
     num_atoms: int = 51
     v_min: int = -10
     v_max: int = 10
 
     # Trajectory options
-    trajectory_length: int = 1
+    trajectory_length: int = 8
 
     reward: Literal['punish', 'time-reward', 'reward'] = 'punish'
 
@@ -135,8 +136,10 @@ class Args:
 
     use_heuristics: None | Literal['greedy', 'random'] = None
 
+
 args = tyro.cli(Args)
 device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+
 
 def make_env(evaluation=False, max_possible=False):
     num_sensors = random.randint(args.min_num_sensors, args.max_num_sensors) if not max_possible else args.max_num_sensors
@@ -257,6 +260,9 @@ def to_categorical(rewards, probs, dones):
 
     return projected_probs.float()
 
+profile = line_profiler.LineProfiler()
+
+@profile
 def main():
     writer.add_text(
         "hyperparameters",
@@ -369,6 +375,8 @@ def main():
 
                 next_obs, _, _, _, infos = temp_env.step(actions)
                 temp_obs = next_obs
+                eval_trajectory = np.roll(eval_trajectory, -1, axis=1)
+                eval_trajectory[:, -1, :] = np.stack(list(temp_obs.values()))
 
                 if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
                     info = infos[env.agents[0]]
@@ -732,3 +740,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    profile.dump_stats("profile_results.lprof")

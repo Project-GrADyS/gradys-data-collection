@@ -22,24 +22,26 @@ class Args:
 experiments = [
 ]
 
-min_agents, max_agents = (2, 8)
+min_agents, max_agents = (4, 4)
 min_sensors, max_sensors = (12, 36)
 alpha, beta = (0.7, 1)
-lr = 1e-7
+lr = 1e-6
 
-for use_distributional in [True, False]:
+for trajectory in [True]:
     experiments.append([
         "python", "main.py",
         f"--min-num-drones={min_agents}", f"--max-num-drones={max_agents}",
         f"--min-num-sensors={min_sensors}", f"--max-num-sensors={max_sensors}",
-        "--run-name=longer priority bench",
-        f"--exp-name=use_distributional" if use_distributional else f"--exp-name=no_distributional",
-        f"--use-distributional-critic" if use_distributional else f"--no-use-distributional-critic",
+        "--run-name=trajectory",
+        f"--exp-name=4 agents trajectory on actor" if trajectory else f"--exp-name=4 agents",
+        f"--use-distributional-critic",
         f"--use-phantom-agents",
         f"--critic-use-active-agents",
         f"--use-priority",
+        f"--trajectory-length=8" if trajectory else f"--trajectory-length=1",
+        f"--batch-size=2048" if trajectory else f"--batch-size=256",
         f"--priority-alpha={alpha}", f"--priority-beta={beta}",
-        "--min-sensor-priority=1", "--total-timesteps=100000000",
+        "--min-sensor-priority=1", "--total-timesteps=50000",
         "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
         f"--actor-learning-rate={lr}", f"--critic-learning-rate={lr}",
         f"--state-num-closest-drones=7", f"--state-num-closest-sensors=12",
