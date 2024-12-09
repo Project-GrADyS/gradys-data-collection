@@ -1,0 +1,4 @@
+# Training
+The `main.py` file contains all code used in the trainig process for this scenario. The training process is configurable with several command line arguments. The `benchmark.py` file can be used to run several variations at the same time. The environment is defined inside `environment.py`, following the Pettingzoo specification.
+
+In the `runs` folder you can see the saved most relevant results obtained in this scenario. The code in `plot_paths.py` can be used to create plots containing the UAV's trajectories. Reward visualizations were generated with the script `runs/results/visualization/visualization.py`. Performance comparisons with the greedy heuristic were created with the `visualize_performance.py` script.
