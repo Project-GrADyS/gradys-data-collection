@@ -2,6 +2,7 @@
 import os
 import random
 import time
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Literal
 
@@ -195,6 +196,9 @@ def main():
     all_max_reward = 0
     all_sum_reward = 0
     all_episode_duration = 0
+    all_completion_time = 0
+    sensor_completion_time = defaultdict(int)
+    sensor_episode_counts = defaultdict(int)
 
     # TRY NOT TO MODIFY: seeding
     random.seed(args.seed)
@@ -249,7 +253,6 @@ def main():
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
 
-        temp_env = make_env(True)
 
         actor.eval()
         target_actor.eval()
@@ -262,11 +265,15 @@ def main():
         sum_episode_duration = 0
         sum_avg_collection_time = 0
         sum_all_collected = 0
+        sum_all_completion_time = 0
+        eval_sensor_completion_time = defaultdict(int)
+        eval_sensor_episode_counts = defaultdict(int)
 
         evaluation_runs = 200
         for i in range(evaluation_runs):
             if i % 100 == 0:
                 print(f"Evaluating model ({i+1}/{evaluation_runs})")
+            temp_env = make_env(True)
             temp_obs, _ = temp_env.reset(seed=args.seed)
             while True:
                 actions = {}
@@ -282,8 +289,8 @@ def main():
                 next_obs, _, _, _, infos = temp_env.step(actions)
                 temp_obs = next_obs
 
-                if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
-                    info = infos[env.agents[0]]
+                if len(infos) > 0 and "avg_reward" in infos[temp_env.agents[0]]:
+                    info = infos[temp_env.agents[0]]
 
                     sum_avg_reward += info["avg_reward"]
                     sum_max_reward += info["max_reward"]
@@ -291,6 +298,9 @@ def main():
                     sum_episode_duration += info["episode_duration"]
                     sum_avg_collection_time += info["avg_collection_time"]
                     sum_all_collected += info["all_collected"]
+                    sum_all_completion_time += info["completion_time"]
+                    eval_sensor_episode_counts[temp_env.num_sensors] += 1
+                    eval_sensor_completion_time[temp_env.num_sensors] += info["completion_time"]
                     break
             temp_env.close()
         
@@ -324,6 +334,19 @@ def main():
             sum_all_collected / evaluation_runs,
             global_step,
         )
+        writer.add_scalar(
+            "eval/all_completion_time",
+            sum_all_completion_time / evaluation_runs,
+            global_step,
+        )
+
+        for num_sensors, count in sensor_episode_counts.items():
+            writer.add_scalar(
+                f"eval/sensor_completion_time/{num_sensors}",
+                sensor_completion_time[num_sensors] / count,
+                global_step,
+            )
+
         temp_env.close()
 
         actor.train()
@@ -341,6 +364,7 @@ def main():
         step_start = time.time()
 
         if terminated:
+            env = make_env()
             obs, _ = env.reset(seed=args.seed)
             terminated = False
 
@@ -387,6 +411,10 @@ def main():
             all_episode_duration += info["episode_duration"]
             all_avg_collection_times += info["avg_collection_time"]
             all_collected_count += info["all_collected"]
+            all_completion_time += info["completion_time"]
+
+            sensor_episode_counts[env.num_sensors] += 1
+            sensor_completion_time[env.num_sensors] += info["completion_time"]
 
         if args.use_heuristics:
             obs = next_obs
@@ -483,6 +511,18 @@ def main():
                 all_collected_count / episode_count,
                 global_step,
             )
+            writer.add_scalar(
+                "charts/completion_time",
+                all_completion_time / episode_count,
+                global_step,
+            )
+
+            for num_sensors, count in sensor_episode_counts.items():
+                writer.add_scalar(
+                    f"charts/sensor_completion_time/{num_sensors}",
+                    sensor_completion_time[num_sensors] / count,
+                    global_step,
+                )
 
             print(f"{args.exp_name} - SPS:", global_step / (time.time() - start_time))
 
