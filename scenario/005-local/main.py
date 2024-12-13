@@ -180,7 +180,7 @@ if args.use_heuristics == 'random':
     heuristics = create_random_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
 
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
-writer = SummaryWriter(f"runs/{run_name}")
+writer = SummaryWriter(f"runs/{args.exp_name}/{run_name}")
 
 def main():
     writer.add_text(
@@ -249,7 +249,7 @@ def main():
 
     def evaluate_checkpoint():
         print("Reached checkpoint at step", global_step)
-        model_path = f"runs/{run_name}/{args.exp_name}-checkpoint{global_step // 10_000}.cleanrl_model"
+        model_path = f"runs/{args.exp_name}/{run_name}/checkpoint{global_step // 10_000}.cleanrl_model"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
 
