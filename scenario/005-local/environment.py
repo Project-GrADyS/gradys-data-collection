@@ -1,7 +1,7 @@
 import math
 import random
 from time import sleep
-from typing import List, Optional, Literal
+from typing import List, Optional, Literal, TypedDict, cast
 
 import gymnasium
 import numpy as np
@@ -21,43 +21,96 @@ from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
 from gymnasium.spaces import Box
 from pettingzoo import ParallelEnv
+import json
+from scipy.spatial import KDTree
+from wandb.cli.cli import local
 
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
 
 
-class SensorProtocol(IProtocol):
-    has_collected: bool
+class SensorBroadcast(TypedDict):
+    id: int
+    position: tuple[float, float, float]
+    collected: bool
 
-    min_priority: int = 0
-    max_priority: int = 1
+class DroneBroadcast(TypedDict):
+    id: int
+    position: tuple[float, float, float]
+    known_sensors: dict[str, tuple[float, float, float]]
+    known_sensors_age: dict[str, float]
+    known_drones: dict[str, tuple[float, float, float]]
+    known_drones_age: dict[str, float]
+
+
+class SensorProtocol(IProtocol):
+
+    min_priority: float = 0
+    max_priority: float = 1
+
+    has_collected: bool
+    priority: float
+    position: tuple[float, float, float] | None
+    initialized: bool
 
     def initialize(self) -> None:
         self.priority = random.uniform(self.min_priority, self.max_priority)
         self.provider.tracked_variables["priority"] = self.priority
         self.has_collected = False
         self.provider.tracked_variables["collected"] = self.has_collected
+        self.position = None
+        self.initialized = False
 
     def handle_packet(self, message: str) -> None:
-        self.has_collected = True
-        self.provider.tracked_variables["collected"] = self.has_collected
+        if message.startswith("D:"):
+            self.has_collected = True
+            self.provider.tracked_variables["collected"] = self.has_collected
+
+    def send_heartbeat(self) -> None:
+        message_content: SensorBroadcast = {
+            "id": self.provider.get_id(),
+            "position": cast(tuple[float, float, float], self.position),
+            "collected": self.has_collected
+        }
+        message = "S:" + json.dumps(message_content)
+
+        command = BroadcastMessageCommand(message)
+        self.provider.send_communication_command(command)
+
+        self.provider.schedule_timer("", self.provider.current_time() + 1)
 
     def handle_timer(self, timer: str) -> None:
-        pass
+        self.send_heartbeat()
 
     def handle_telemetry(self, telemetry: Telemetry) -> None:
-        pass
+        if self.position is None:
+            self.position = telemetry.current_position
+            self.send_heartbeat()
+            self.initialized = True
 
     def finish(self) -> None:
         pass
 
-
 class DroneProtocol(IProtocol):
-    current_position: tuple[float, float, float]
+    # External configurable class parameters
     speed_action: bool = False
     algorithm_interval: float = 0.1
+    num_closest_drones: int = 8
+    num_closest_sensors: int = 12
+    sensor_positions: dict[int, tuple[float, float, float]] = {}
+    scenario_size: float = 100
+
+    current_position: tuple[float, float, float] | None
+    initialized: bool
+
+    known_sensors: dict[int, tuple[float, float, float]]
+    known_sensors_age: dict[int, float]
+    known_drones: dict[int, tuple[float, float, float]]
+    known_drones_age: dict[int, float]
 
     def act(self, action: List[float], coordinate_limit: float) -> None:
-        self.provider.tracked_variables['current_action'] = list(action)
+        if isinstance(action, np.ndarray):
+            action = action.tolist()
+        self.provider.tracked_variables['current_action'] = action
 
         direction: float = action[0] * 2 * math.pi
 
@@ -101,26 +154,103 @@ class DroneProtocol(IProtocol):
         if self.speed_action:
             self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.99)
 
+    def observe(self):
+        drone_positions = np.array([pos[:2] for pos in self.known_drones.values()]).reshape((-1, 2))
+        sensor_positions = np.array([pos[:2] for pos in self.known_sensors.values()]).reshape((-1, 2))
+        own_position = np.array(self.current_position[:2])
+
+        drone_kdtree = KDTree(drone_positions)
+        sensor_kdtree = KDTree(sensor_positions)
+
+        drone_count = min(self.num_closest_drones, len(drone_positions))
+        sensor_count = min(self.num_closest_sensors, len(sensor_positions))
+
+        drone_observation = np.zeros((self.num_closest_drones, 2))
+        drone_observation.fill(-1)
+        sensor_observation = np.zeros((self.num_closest_sensors, 2))
+        sensor_observation.fill(-1)
+
+        if drone_count > 0:
+            _, closest_drones = drone_kdtree.query(own_position, drone_count)
+            drone_observation[:drone_count] = (
+                    own_position - drone_positions[closest_drones] + self.scenario_size) / (self.scenario_size * 2)
+
+        if sensor_count > 0:
+            _, closest_sensors = sensor_kdtree.query(own_position, sensor_count)
+            sensor_observation[:sensor_count] = (
+                    own_position - sensor_positions[closest_sensors] + self.scenario_size) / (self.scenario_size * 2)
+
+        return drone_observation.flatten(), sensor_observation.flatten()
+
     def initialize(self) -> None:
-        self.current_position = (0, 0, 0)
-        self._collect_packets()
-        if not self.speed_action:
-            self.provider.schedule_timer("", self.provider.current_time() + 0.1)
+        self.current_position = None
+
+        self.known_sensors = {**self.sensor_positions}
+        self.known_sensors_age = {
+            sensor_id: self.provider.current_time()
+            for sensor_id in self.sensor_positions.keys()
+        }
+        self.known_drones = {}
+        self.known_drones_age = {}
+
+        self.provider.tracked_variables['known_sensors'] = self.known_sensors
+        self.provider.tracked_variables['known_drones'] = self.known_drones
+
+        self.initialized = False
 
     def handle_timer(self, timer: str) -> None:
+        self.initialized = True
         self._collect_packets()
-        if not self.speed_action:
-            self.provider.schedule_timer("", self.provider.current_time() + 0.1)
 
     def handle_packet(self, message: str) -> None:
-        pass
+        message_type = message[:1]
+        message = json.loads(message[2:])
+
+        if message_type == 'S':
+            sensor_message: SensorBroadcast = message
+            self.known_sensors_age[sensor_message['id']] = self.provider.current_time()
+
+            if sensor_message['collected'] and sensor_message['id'] in self.known_sensors:
+                del self.known_sensors[sensor_message['id']]
+        else:
+            drone_message: DroneBroadcast = message
+            self.known_drones_age[drone_message['id']] = self.provider.current_time()
+            self.known_drones[drone_message['id']] = drone_message['position']
+
+            for other_drone in drone_message['known_drones_age'].keys():
+                if int(other_drone) == self.provider.get_id():
+                    continue
+
+                if drone_message['known_drones_age'][other_drone] > self.known_drones_age.get(int(other_drone), -1):
+                    self.known_drones_age[int(other_drone)] = drone_message['known_drones_age'][other_drone]
+                    self.known_drones[int(other_drone)] = drone_message['known_drones'][other_drone]
+
+            for other_sensor in drone_message['known_sensors_age'].keys():
+                if drone_message['known_sensors_age'][other_sensor] > self.known_sensors_age.get(int(other_sensor), -1):
+                    self.known_sensors_age[int(other_sensor)] = drone_message['known_sensors_age'][other_sensor]
+                    if other_sensor not in drone_message['known_sensors'] and other_sensor in self.known_sensors:
+                        del self.known_sensors[int(other_sensor)]
 
     def handle_telemetry(self, telemetry: Telemetry) -> None:
-        self.current_position = telemetry.current_position
+        if self.current_position is None:
+            self.current_position = telemetry.current_position
+            self._collect_packets()
+        else:
+            self.current_position = telemetry.current_position
 
     def _collect_packets(self) -> None:
-        command = BroadcastMessageCommand("")
+        message_content: DroneBroadcast = {
+            "id": self.provider.get_id(),
+            "position": cast(tuple[float, float, float], self.current_position),
+            "known_drones": { str(drone_id): pos for drone_id, pos in self.known_drones.items() },
+            "known_drones_age": { str(drone_id): age for drone_id, age in self.known_drones_age.items() },
+            "known_sensors": { str(sensor_id): pos for sensor_id, pos in self.known_sensors.items() },
+            "known_sensors_age": { str(sensor_id): age for sensor_id, age in self.known_sensors_age.items() }
+        }
+
+        command = BroadcastMessageCommand("D:" + json.dumps(message_content))
         self.provider.send_communication_command(command)
+        self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
 
     def finish(self) -> None:
         pass
@@ -164,7 +294,8 @@ class GrADySEnvironment(ParallelEnv):
                  full_random_drone_position: bool = False,
                  reward: Literal['punish', 'time-reward', 'reward'] = 'punish',
                  speed_action: bool = True,
-                 end_when_all_collected: bool = True):
+                 end_when_all_collected: bool = True,
+                 local_observation: bool = False):
         """
         The init method takes in environment arguments and should define the following attributes:
         - possible_agents
@@ -197,6 +328,7 @@ class GrADySEnvironment(ParallelEnv):
         self.reward = reward
         self.speed_action = speed_action
         self.end_when_all_collected = end_when_all_collected
+        self.local_observation = local_observation
 
     def observation_space(self, agent):
         agent_id = 1 if self.id_on_state else 0
@@ -254,80 +386,6 @@ class GrADySEnvironment(ParallelEnv):
         # Closing the simulator
         self.simulator._finalize_simulation()
 
-    def observe_simulation_angle_distance(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
-
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
-
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
-
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes, key=lambda sensor_node: squared_distance(sensor_node.position, agent_position))
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                angle = np.arctan2(sensor_node.position[1] - agent_position[1], sensor_node.position[0] - agent_position[0])
-                distance = np.linalg.norm(np.array(sensor_node.position[:2]) - np.array(agent_position[:2]))
-                closest_unvisited_sensors[i, 0] = angle / np.pi
-                closest_unvisited_sensors[i, 1] = distance / self.scenario_size
-
-            closest_agents = np.zeros((self.state_num_closest_drones, 2))
-
-            sorted_agents = sorted(agent_nodes, key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                angle = np.arctan2(agent_node.position[1] - agent_position[1], agent_node.position[0] - agent_position[0])
-                distance = np.linalg.norm(np.array(agent_node.position[:2]) - np.array(agent_position[:2]))
-                closest_agents[i, 0] = angle / np.pi
-                closest_agents[i, 1] = distance / self.scenario_size
-
-
-            state[f"drone{agent_index}"] = np.concatenate([
-                closest_agents.flatten(),
-                closest_unvisited_sensors.flatten(),
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
-        return state
-
-    def observe_simulation_angle(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
-
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
-
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors,))
-
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes, key=lambda sensor_node: squared_distance(sensor_node.position, agent_position))
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                angle = np.arctan2(sensor_node.position[1] - agent_position[1], sensor_node.position[0] - agent_position[0])
-                closest_unvisited_sensors[i] = angle / np.pi
-
-            closest_agents = np.zeros((self.state_num_closest_drones,))
-
-            sorted_agents = sorted(agent_nodes, key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                angle = np.arctan2(agent_node.position[1] - agent_position[1], agent_node.position[0] - agent_position[0])
-                closest_agents[i] = angle / np.pi
-
-
-            state[f"drone{agent_index}"] = np.concatenate([
-                closest_agents,
-                closest_unvisited_sensors,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
-        return state
-
     def observe_simulation_relative_positions(self):
         sensor_nodes = np.array([self.simulator.get_node(sensor_id).position[:2] for sensor_id in self.sensor_node_ids])
         unvisited_sensor_mask = np.array(
@@ -337,116 +395,60 @@ class GrADySEnvironment(ParallelEnv):
 
         agent_nodes = np.array([self.simulator.get_node(agent_id).position[:2] for agent_id in self.agent_node_ids])
 
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index]
+        if self.local_observation:
+            node_observations = (
+                self.simulator.get_node(node).protocol_encapsulator.protocol.observe() for node in self.agent_node_ids
+            )
+            state = {
+                f"drone{index}":
+                    np.concatenate(
+                        [drone_observation, sensor_observation, [index / self.num_drones] if self.id_on_state else []])
+                for index, (drone_observation, sensor_observation) in enumerate(node_observations)
+            }
+        else:
+            state = {}
+            for agent_index in range(self.num_drones):
+                agent_position = agent_nodes[agent_index]
 
-            # Calculate distances to all unvisited sensors and sort them
-            sensor_distances = np.linalg.norm(unvisited_sensor_nodes - agent_position, axis=1)
-            sorted_sensor_indices = np.argsort(sensor_distances)
+                # Calculate distances to all unvisited sensors and sort them
+                sensor_distances = np.linalg.norm(unvisited_sensor_nodes - agent_position, axis=1)
+                sorted_sensor_indices = np.argsort(sensor_distances)
 
-            # Select the closest sensors
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
-            closest_unvisited_sensors.fill(-1)
-            closest_unvisited_sensors[:len(sorted_sensor_indices)] = unvisited_sensor_nodes[
-                sorted_sensor_indices[:self.state_num_closest_sensors]]
+                # Select the closest sensors
+                closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
+                closest_unvisited_sensors.fill(-1)
+                closest_unvisited_sensors[:len(sorted_sensor_indices)] = unvisited_sensor_nodes[
+                    sorted_sensor_indices[:self.state_num_closest_sensors]]
 
-            # Calculate distances to all other agents and sort them
-            agent_distances = np.linalg.norm(agent_nodes - agent_position, axis=1)
-            sorted_agent_indices = np.argsort(agent_distances)
+                # Calculate distances to all other agents and sort them
+                agent_distances = np.linalg.norm(agent_nodes - agent_position, axis=1)
+                sorted_agent_indices = np.argsort(agent_distances)
 
-            # Select the closest agents (excluding the agent itself)
-            closest_agents = np.zeros((self.state_num_closest_drones, 2))
-            closest_agents.fill(-1)
-            closest_agents[:len(sorted_agent_indices) - 1] = agent_nodes[
-                sorted_agent_indices[1:self.state_num_closest_drones + 1]]
+                # Select the closest agents (excluding the agent itself)
+                closest_agents = np.zeros((self.state_num_closest_drones, 2))
+                closest_agents.fill(-1)
+                closest_agents[:len(sorted_agent_indices) - 1] = agent_nodes[
+                    sorted_agent_indices[1:self.state_num_closest_drones + 1]]
 
-            # Normalize the positions
-            closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(
-                sorted_agent_indices) - 1] + self.scenario_size) / (self.scenario_size * 2)
-            closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(
-                sorted_sensor_indices)] + self.scenario_size) / (self.scenario_size * 2)
+                # Normalize the positions
+                closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(
+                    sorted_agent_indices) - 1] + self.scenario_size) / (self.scenario_size * 2)
+                closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(
+                    sorted_sensor_indices)] + self.scenario_size) / (self.scenario_size * 2)
 
-            state[f"drone{agent_index}"] = np.concatenate([
-                closest_agents.flatten(),
-                closest_unvisited_sensors.flatten(),
-                np.array([agent_index / self.num_drones]) if self.id_on_state else []
-            ])
-        return state
+                state[f"drone{agent_index}"] = np.concatenate([
+                    closest_agents.flatten(),
+                    closest_unvisited_sensors.flatten(),
+                    np.array([agent_index / self.num_drones]) if self.id_on_state else []
+                ])
 
-    def observe_simulation_absolute_positions(self):
-        sensor_nodes = [self.simulator.get_node(sensor_id) for sensor_id in self.sensor_node_ids]
-        unvisited_sensor_nodes = [sensor_node for sensor_node in sensor_nodes
-                                  if not sensor_node.protocol_encapsulator.protocol.has_collected]
-
-        agent_nodes = [self.simulator.get_node(agent_id) for agent_id in self.agent_node_ids]
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            agent_position = agent_nodes[agent_index].position
-
-            closest_unvisited_sensors = np.zeros((self.state_num_closest_sensors, 2))
-
-            sorted_unvisited_sensors = sorted(unvisited_sensor_nodes, key=lambda sensor_node: squared_distance(sensor_node.position, agent_position))
-
-            for i, sensor_node in enumerate(sorted_unvisited_sensors[:self.state_num_closest_sensors]):
-                closest_unvisited_sensors[i] = sensor_node.position[:2]
-
-            closest_agents = np.zeros((self.state_num_closest_drones, 2))
-
-            sorted_agents = sorted(agent_nodes, key=lambda agent_node: squared_distance(agent_node.position, agent_position))
-
-            for i, agent_node in enumerate(sorted_agents[1:self.state_num_closest_drones + 1]):
-                closest_agents[i] = agent_node.position[:2]
-
-
-            state[f"drone{agent_index}"] = np.concatenate([
-                np.array(agent_position[:2]) / self.scenario_size,
-                closest_agents.flatten() / self.scenario_size,
-                closest_unvisited_sensors.flatten() / self.scenario_size,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
-        return state
-
-
-    def observe_simulation_all_positions(self):
-        sensor_locations = np.zeros(self.num_sensors * 2)
-        sensor_visited = np.zeros(self.num_sensors)
-        for i in range(self.num_sensors):
-            sensor_node = self.simulator.get_node(self.sensor_node_ids[i])
-            sensor_locations[i * 2] = sensor_node.position[0] / self.scenario_size
-            sensor_locations[i * 2 + 1] = sensor_node.position[1] / self.scenario_size
-
-            sensor_visited[i] = int(sensor_node.protocol_encapsulator.protocol.has_collected)
-
-        agent_positions = np.zeros(self.num_drones * 2)
-        for i in range(self.num_drones):
-            agent_node = self.simulator.get_node(self.agent_node_ids[i])
-            agent_positions[i * 2] = agent_node.position[0] / self.scenario_size
-            agent_positions[i * 2 + 1] = agent_node.position[1] / self.scenario_size
-
-        general_observations = np.concatenate([sensor_locations, sensor_visited, agent_positions])
-
-        state = {}
-        for agent_index in range(self.num_drones):
-            # General observations and agent index
-            state[f"drone{agent_index}"] = np.concatenate([
-                general_observations,
-                np.array(agent_index).flatten() / self.num_drones if self.id_on_state else []
-            ])
         return state
 
     def observe_simulation(self):
         if self.state_mode == "relative":
             return self.observe_simulation_relative_positions()
-        elif self.state_mode == "distance_angle":
-            return self.observe_simulation_angle_distance()
-        elif self.state_mode == "angle":
-            return self.observe_simulation_angle()
-        elif self.state_mode == "absolute":
-            return self.observe_simulation_absolute_positions()
-        elif self.state_mode == "all_positions":
-            return self.observe_simulation_all_positions()
+        else:
+            raise NotImplementedError()
 
     def detect_out_of_bounds_agent(self, agent: Node) -> bool:
         return abs(agent.position[0]) > self.scenario_size or abs(agent.position[1]) > self.scenario_size
@@ -511,16 +513,21 @@ class GrADySEnvironment(ParallelEnv):
         SensorProtocol.min_priority = self.min_sensor_priority
         SensorProtocol.max_priority = self.max_sensor_priority
 
+        sensor_positions = {}
         for i in range(self.num_sensors):
-            self.sensor_node_ids.append(builder.add_node(SensorProtocol, (
-                random.uniform(-self.scenario_size, self.scenario_size),
-                random.uniform(-self.scenario_size, self.scenario_size),
-                0
-            )))
+            x_pos = random.uniform(-self.scenario_size, self.scenario_size)
+            y_pos = random.uniform(-self.scenario_size, self.scenario_size)
+            node_id = builder.add_node(SensorProtocol, (x_pos, y_pos, 0))
+            self.sensor_node_ids.append(node_id)
+            sensor_positions[node_id] = (x_pos, y_pos, 0)
 
         self.agent_node_ids = []
         DroneProtocol.speed_action = self.speed_action
         DroneProtocol.algorithm_interval = self.algorithm_iteration_interval
+        DroneProtocol.num_closest_drones = self.state_num_closest_drones
+        DroneProtocol.num_closest_sensors = self.state_num_closest_sensors
+        DroneProtocol.sensor_positions = sensor_positions
+        DroneProtocol.scenario_size = self.scenario_size
         for i in range(self.num_drones):
             if self.full_random_drone_position:
                 self.agent_node_ids.append(builder.add_node(DroneProtocol, (
@@ -539,9 +546,14 @@ class GrADySEnvironment(ParallelEnv):
         if self.render_mode == "visual":
             self.controller = VisualizationController()
 
-        # Running a single simulation step to get the initial observations
-        if not self.simulator.step_simulation():
-            raise ValueError("Simulation failed to start")
+        # Running simulation until all positions are correctly set and initial messages have been exchanged
+        while True:
+            if not self.simulator.step_simulation():
+                raise ValueError("Simulation failed to start")
+
+            if all(self.simulator.get_node(sensor).protocol_encapsulator.protocol.initialized for sensor in self.sensor_node_ids) \
+                    and all(self.simulator.get_node(drone).protocol_encapsulator.protocol.initialized for drone in self.agent_node_ids):
+                break
 
         self.episode_duration = 0
         self.stall_duration = 0

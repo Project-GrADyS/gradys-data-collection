@@ -32,14 +32,6 @@ class Args:
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
     cuda: bool = True
     """if toggled, cuda will be enabled by default"""
-    track: bool = False
-    """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
-    """the wandb's project name"""
-    wandb_entity: str = None
-    """the entity (team) of wandb's project"""
-    capture_video: bool = False
-    """whether to capture videos of the agent performances (check out `videos` folder)"""
     checkpoints: bool = True
     """whether to save model checkpoints"""
     checkpoint_freq: int = 1_000_000
@@ -48,10 +40,6 @@ class Args:
     """whether to visually evaluate the model at each checkpoint"""
     statistics_frequency: float = 10_000
     """statistics will be saved to the tensorboard logs with this frequency"""
-    upload_model: bool = False
-    """whether to upload the saved model to huggingface"""
-    hf_entity: str = ""
-    """the user or org name of the model repository from the Hugging Face Hub"""
 
     # Algorithm specific arguments
     total_timesteps: int = 1000000
@@ -91,6 +79,7 @@ class Args:
     """the number of closest sensors to consider in the state"""
     state_num_closest_drones: int = 2
     """the number of closest drones to consider in the state"""
+    local_observation: bool = False
 
     algorithm_iteration_interval: float = 0.5
     max_seconds_stalled: int = 30
@@ -112,10 +101,11 @@ class Args:
 
     use_heuristics: None | Literal['greedy', 'random'] = None
 
+
 args = tyro.cli(Args)
 
 
-def make_env( evaluation=False):
+def make_env(evaluation=False):
     num_sensors = random.randint(args.min_num_sensors, args.max_num_sensors)
     return GrADySEnvironment(
         algorithm_iteration_interval=args.algorithm_iteration_interval,
@@ -134,7 +124,8 @@ def make_env( evaluation=False):
         full_random_drone_position=False if evaluation else args.full_random_drone_position,
         reward=args.reward,
         speed_action=args.speed_action,
-        end_when_all_collected=args.end_when_all_collected
+        end_when_all_collected=args.end_when_all_collected,
+        local_observation=args.local_observation
     )
 
 
@@ -143,7 +134,8 @@ class Critic(nn.Module):
     def __init__(self, action_space, observation_space):
         super().__init__()
         self.fc1 = nn.Linear(
-            np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones, args.critic_model_size)
+            np.array(observation_space.shape).prod() * args.num_drones + np.prod(action_space.shape) * args.num_drones,
+            args.critic_model_size)
         self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
         self.fc3 = nn.Linear(args.critic_model_size, 1)
 
@@ -153,6 +145,7 @@ class Critic(nn.Module):
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
         return x
+
 
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
@@ -174,13 +167,15 @@ class Actor(nn.Module):
         x = torch.tanh(self.fc_mu(x))
         return x * self.action_scale + self.action_bias
 
+
 if args.use_heuristics == 'greedy':
     heuristics = create_greedy_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
 if args.use_heuristics == 'random':
     heuristics = create_random_heuristics(args.state_num_closest_drones, args.state_num_closest_sensors)
 
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
-writer = SummaryWriter(f"runs/{run_name}")
+writer = SummaryWriter(f"runs/{args.exp_name}/{run_name}")
+
 
 def main():
     writer.add_text(
@@ -249,10 +244,9 @@ def main():
 
     def evaluate_checkpoint():
         print("Reached checkpoint at step", global_step)
-        model_path = f"runs/{run_name}/{args.exp_name}-checkpoint{global_step // 10_000}.cleanrl_model"
+        model_path = f"runs/{args.exp_name}/{run_name}/checkpoint{global_step // 10_000}.cleanrl_model"
         torch.save((actor.state_dict(), qf1.state_dict()), model_path)
         print(f"model saved to {model_path}")
-
 
         actor.eval()
         target_actor.eval()
@@ -272,7 +266,7 @@ def main():
         evaluation_runs = 200
         for i in range(evaluation_runs):
             if i % 100 == 0:
-                print(f"Evaluating model ({i+1}/{evaluation_runs})")
+                print(f"Evaluating model ({i + 1}/{evaluation_runs})")
             temp_env = make_env(True)
             temp_obs, _ = temp_env.reset(seed=args.seed)
             while True:
@@ -303,7 +297,7 @@ def main():
                     eval_sensor_completion_time[temp_env.num_sensors] += info["completion_time"]
                     break
             temp_env.close()
-        
+
         writer.add_scalar(
             "eval/avg_reward",
             sum_avg_reward / evaluation_runs,
@@ -398,7 +392,7 @@ def main():
         # TRY NOT TO MODIFY: execute the game and log data.
         next_obs, rewards, terminations, truncations, infos = env.step(actions)
 
-                # TRY NOT TO MODIFY: record rewards for plotting purposes
+        # TRY NOT TO MODIFY: record rewards for plotting purposes
         if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
             episode_count += 1
             terminated = True
@@ -438,7 +432,7 @@ def main():
             # ALGO LOGIC: training.
             if global_step <= args.learning_starts:
                 continue
-            
+
             training_step_count = args.num_drones if args.train_once_for_each_agent else 1
             data = rb.sample(args.batch_size * training_step_count)
 
