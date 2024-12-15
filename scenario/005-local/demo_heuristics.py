@@ -35,7 +35,9 @@ for num_agents, num_sensors in models:
         state_num_closest_drones=num_agents - 1,
         min_sensor_priority=1,
         full_random_drone_position=False,
-        speed_action=True
+        speed_action=True,
+        local_observation=True,
+        id_on_state=True
     )
 
     success_count = 0
@@ -44,7 +46,7 @@ for num_agents, num_sensors in models:
 
     total_runs = 200
     for i in range(total_runs):
-        if i % 100 == 0:
+        if i % 10 == 0:
             print(f"Running experiment: repetition {i}/{total_runs}")
 
         # Running the model

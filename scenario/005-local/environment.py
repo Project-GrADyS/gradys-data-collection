@@ -6,7 +6,7 @@ from typing import List, Optional, Literal, TypedDict, cast
 import gymnasium
 import numpy as np
 from gradysim.protocol.interface import IProtocol
-from gradysim.protocol.messages.communication import BroadcastMessageCommand
+from gradysim.protocol.messages.communication import BroadcastMessageCommand, SendMessageCommand
 from gradysim.protocol.messages.mobility import GotoCoordsMobilityCommand, SetSpeedMobilityCommand
 from gradysim.protocol.messages.telemetry import Telemetry
 from gradysim.protocol.position import squared_distance
@@ -21,9 +21,7 @@ from gradysim.simulator.node import Node
 from gradysim.simulator.simulation import SimulationBuilder, Simulator, SimulationConfiguration
 from gymnasium.spaces import Box
 from pettingzoo import ParallelEnv
-import json
 from scipy.spatial import KDTree
-from wandb.cli.cli import local
 
 StateMode = Literal["all_positions", "absolute", "relative", "distance_angle", "angle"]
 
@@ -32,20 +30,23 @@ class SensorBroadcast(TypedDict):
     id: int
     position: tuple[float, float, float]
     collected: bool
+    type: Literal["S"]
 
 class DroneBroadcast(TypedDict):
     id: int
     position: tuple[float, float, float]
-    known_sensors: dict[str, tuple[float, float, float]]
-    known_sensors_age: dict[str, float]
-    known_drones: dict[str, tuple[float, float, float]]
-    known_drones_age: dict[str, float]
+    known_sensors: dict[int, tuple[float, float, float]]
+    known_sensors_age: dict[int, float]
+    known_drones: dict[int, tuple[float, float, float]]
+    known_drones_age: dict[int, float]
+    type: Literal["D"]
 
 
 class SensorProtocol(IProtocol):
 
     min_priority: float = 0
     max_priority: float = 1
+    drone_ids: List[int] = []
 
     has_collected: bool
     priority: float
@@ -61,7 +62,7 @@ class SensorProtocol(IProtocol):
         self.initialized = False
 
     def handle_packet(self, message: str) -> None:
-        if message.startswith("D:"):
+        if message['type'] == 'D':
             self.has_collected = True
             self.provider.tracked_variables["collected"] = self.has_collected
 
@@ -69,12 +70,13 @@ class SensorProtocol(IProtocol):
         message_content: SensorBroadcast = {
             "id": self.provider.get_id(),
             "position": cast(tuple[float, float, float], self.position),
-            "collected": self.has_collected
+            "collected": self.has_collected,
+            "type": "S"
         }
-        message = "S:" + json.dumps(message_content)
 
-        command = BroadcastMessageCommand(message)
-        self.provider.send_communication_command(command)
+        for drone in self.drone_ids:
+            command = SendMessageCommand(message_content, drone)
+            self.provider.send_communication_command(command)
 
         self.provider.schedule_timer("", self.provider.current_time() + 1)
 
@@ -151,9 +153,6 @@ class DroneProtocol(IProtocol):
         command = GotoCoordsMobilityCommand(*destination)
         self.provider.send_mobility_command(command)
 
-        if self.speed_action:
-            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.99)
-
     def observe(self):
         drone_positions = np.array([pos[:2] for pos in self.known_drones.values()]).reshape((-1, 2))
         sensor_positions = np.array([pos[:2] for pos in self.known_sensors.values()]).reshape((-1, 2))
@@ -196,6 +195,8 @@ class DroneProtocol(IProtocol):
         self.provider.tracked_variables['known_sensors'] = self.known_sensors
         self.provider.tracked_variables['known_drones'] = self.known_drones
 
+        self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
+
         self.initialized = False
 
     def handle_timer(self, timer: str) -> None:
@@ -203,8 +204,7 @@ class DroneProtocol(IProtocol):
         self._collect_packets()
 
     def handle_packet(self, message: str) -> None:
-        message_type = message[:1]
-        message = json.loads(message[2:])
+        message_type = message['type']
 
         if message_type == 'S':
             sensor_message: SensorBroadcast = message
@@ -234,23 +234,24 @@ class DroneProtocol(IProtocol):
     def handle_telemetry(self, telemetry: Telemetry) -> None:
         if self.current_position is None:
             self.current_position = telemetry.current_position
-            self._collect_packets()
         else:
             self.current_position = telemetry.current_position
 
     def _collect_packets(self) -> None:
-        message_content: DroneBroadcast = {
-            "id": self.provider.get_id(),
-            "position": cast(tuple[float, float, float], self.current_position),
-            "known_drones": { str(drone_id): pos for drone_id, pos in self.known_drones.items() },
-            "known_drones_age": { str(drone_id): age for drone_id, age in self.known_drones_age.items() },
-            "known_sensors": { str(sensor_id): pos for sensor_id, pos in self.known_sensors.items() },
-            "known_sensors_age": { str(sensor_id): age for sensor_id, age in self.known_sensors_age.items() }
-        }
+        if self.current_position is not None:
+            message_content: DroneBroadcast = {
+                "id": self.provider.get_id(),
+                "position": self.current_position,
+                "known_drones": self.known_drones,
+                "known_drones_age": self.known_drones_age,
+                "known_sensors": self.known_sensors,
+                "known_sensors_age": self.known_sensors_age,
+                "type": "D"
+            }
 
-        command = BroadcastMessageCommand("D:" + json.dumps(message_content))
-        self.provider.send_communication_command(command)
-        self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
+            command = BroadcastMessageCommand(message_content)
+            self.provider.send_communication_command(command)
+        self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval)
 
     def finish(self) -> None:
         pass
@@ -466,7 +467,7 @@ class GrADySEnvironment(ParallelEnv):
         builder = SimulationBuilder(SimulationConfiguration(
             debug=False,
             execution_logging=False,
-            duration=self.max_episode_length
+            duration=self.max_episode_length,
         ))
         builder.add_handler(CommunicationHandler(CommunicationMedium(
             transmission_range=self.communication_range
@@ -541,6 +542,8 @@ class GrADySEnvironment(ParallelEnv):
                     random.uniform(-2, 2),
                     0
                 )))
+
+        SensorProtocol.drone_ids = self.agent_node_ids
 
         self.simulator = builder.build()
         if self.render_mode == "visual":
