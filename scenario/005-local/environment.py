@@ -41,220 +41,233 @@ class DroneBroadcast(TypedDict):
     known_drones_age: dict[int, float]
     type: Literal["D"]
 
+def create_sensor_protocol(min_priority: float, max_priority: float, drone_ids: List[int]):
+    class SensorProtocol(IProtocol):
+        has_collected: bool
+        priority: float
+        position: tuple[float, float, float] | None
+        initialized: bool
 
-class SensorProtocol(IProtocol):
+        def __init__(self):
+            super().__init__()
+            
+            self.min_priority: float = min_priority
+            self.max_priority: float = max_priority
+            self.drone_ids: List[int] = drone_ids
 
-    min_priority: float = 0
-    max_priority: float = 1
-    drone_ids: List[int] = []
-
-    has_collected: bool
-    priority: float
-    position: tuple[float, float, float] | None
-    initialized: bool
-
-    def initialize(self) -> None:
-        self.priority = random.uniform(self.min_priority, self.max_priority)
-        self.provider.tracked_variables["priority"] = self.priority
-        self.has_collected = False
-        self.provider.tracked_variables["collected"] = self.has_collected
-        self.position = None
-        self.initialized = False
-
-    def handle_packet(self, message: str) -> None:
-        if message['type'] == 'D':
-            self.has_collected = True
+        def initialize(self) -> None:
+            self.priority = random.uniform(self.min_priority, self.max_priority)
+            self.provider.tracked_variables["priority"] = self.priority
+            self.has_collected = False
             self.provider.tracked_variables["collected"] = self.has_collected
+            self.position = None
+            self.initialized = False
 
-    def send_heartbeat(self) -> None:
-        message_content: SensorBroadcast = {
-            "id": self.provider.get_id(),
-            "position": cast(tuple[float, float, float], self.position),
-            "collected": self.has_collected,
-            "type": "S"
-        }
+        def handle_packet(self, message: str) -> None:
+            if message['type'] == 'D':
+                self.has_collected = True
+                self.provider.tracked_variables["collected"] = self.has_collected
 
-        for drone in self.drone_ids:
-            command = SendMessageCommand(message_content, drone)
-            self.provider.send_communication_command(command)
-
-        self.provider.schedule_timer("", self.provider.current_time() + 1)
-
-    def handle_timer(self, timer: str) -> None:
-        self.send_heartbeat()
-
-    def handle_telemetry(self, telemetry: Telemetry) -> None:
-        if self.position is None:
-            self.position = telemetry.current_position
-            self.send_heartbeat()
-            self.initialized = True
-
-    def finish(self) -> None:
-        pass
-
-class DroneProtocol(IProtocol):
-    # External configurable class parameters
-    speed_action: bool = False
-    algorithm_interval: float = 0.1
-    num_closest_drones: int = 8
-    num_closest_sensors: int = 12
-    sensor_positions: dict[int, tuple[float, float, float]] = {}
-    scenario_size: float = 100
-
-    current_position: tuple[float, float, float] | None
-    initialized: bool
-
-    known_sensors: dict[int, tuple[float, float, float]]
-    known_sensors_age: dict[int, float]
-    known_drones: dict[int, tuple[float, float, float]]
-    known_drones_age: dict[int, float]
-
-    def act(self, action: List[float], coordinate_limit: float) -> None:
-        if isinstance(action, np.ndarray):
-            action = action.tolist()
-        self.provider.tracked_variables['current_action'] = action
-
-        direction: float = action[0] * 2 * math.pi
-
-        if self.speed_action:
-            speed: float = action[1] * 15
-            command = SetSpeedMobilityCommand(speed)
-            self.provider.send_mobility_command(command)
-
-        unit_vector = [math.cos(direction), math.sin(direction)]
-
-        distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
-        distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
-
-        # Maintain direction but bound destination within scenario
-        if distance_to_x_edge > 0 and distance_to_y_edge > 0:
-            scale_x = distance_to_x_edge / (abs(unit_vector[0]) + 1e-10)
-            scale_y = distance_to_y_edge / (abs(unit_vector[1]) + 1e-10)
-            scale = min(scale_x, scale_y)
-
-            destination = [
-                self.current_position[0] + unit_vector[0] * scale,
-                self.current_position[1] + unit_vector[1] * scale,
-                0
-            ]
-
-        # If the drone is at the edge of the scenario, prevent it from leaving
-        else:
-            destination = [
-                self.current_position[0] + unit_vector[0] * 1e5,
-                self.current_position[1] + unit_vector[1] * 1e5,
-                0
-            ]
-            # Bound destination within scenario
-            destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
-            destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
-
-        # Start travelling in the direction of travel
-        command = GotoCoordsMobilityCommand(*destination)
-        self.provider.send_mobility_command(command)
-
-    def observe(self):
-        drone_positions = np.array([pos[:2] for pos in self.known_drones.values()]).reshape((-1, 2))
-        sensor_positions = np.array([pos[:2] for pos in self.known_sensors.values()]).reshape((-1, 2))
-        own_position = np.array(self.current_position[:2])
-
-        drone_kdtree = KDTree(drone_positions)
-        sensor_kdtree = KDTree(sensor_positions)
-
-        drone_count = min(self.num_closest_drones, len(drone_positions))
-        sensor_count = min(self.num_closest_sensors, len(sensor_positions))
-
-        drone_observation = np.zeros((self.num_closest_drones, 2))
-        drone_observation.fill(-1)
-        sensor_observation = np.zeros((self.num_closest_sensors, 2))
-        sensor_observation.fill(-1)
-
-        if drone_count > 0:
-            _, closest_drones = drone_kdtree.query(own_position, drone_count)
-            drone_observation[:drone_count] = (
-                    own_position - drone_positions[closest_drones] + self.scenario_size) / (self.scenario_size * 2)
-
-        if sensor_count > 0:
-            _, closest_sensors = sensor_kdtree.query(own_position, sensor_count)
-            sensor_observation[:sensor_count] = (
-                    own_position - sensor_positions[closest_sensors] + self.scenario_size) / (self.scenario_size * 2)
-
-        return drone_observation.flatten(), sensor_observation.flatten()
-
-    def initialize(self) -> None:
-        self.current_position = None
-
-        self.known_sensors = {**self.sensor_positions}
-        self.known_sensors_age = {
-            sensor_id: self.provider.current_time()
-            for sensor_id in self.sensor_positions.keys()
-        }
-        self.known_drones = {}
-        self.known_drones_age = {}
-
-        self.provider.tracked_variables['known_sensors'] = self.known_sensors
-        self.provider.tracked_variables['known_drones'] = self.known_drones
-
-        self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
-
-        self.initialized = False
-
-    def handle_timer(self, timer: str) -> None:
-        self.initialized = True
-        self._collect_packets()
-
-    def handle_packet(self, message: str) -> None:
-        message_type = message['type']
-
-        if message_type == 'S':
-            sensor_message: SensorBroadcast = message
-            self.known_sensors_age[sensor_message['id']] = self.provider.current_time()
-
-            if sensor_message['collected'] and sensor_message['id'] in self.known_sensors:
-                del self.known_sensors[sensor_message['id']]
-        else:
-            drone_message: DroneBroadcast = message
-            self.known_drones_age[drone_message['id']] = self.provider.current_time()
-            self.known_drones[drone_message['id']] = drone_message['position']
-
-            for other_drone in drone_message['known_drones_age'].keys():
-                if int(other_drone) == self.provider.get_id():
-                    continue
-
-                if drone_message['known_drones_age'][other_drone] > self.known_drones_age.get(int(other_drone), -1):
-                    self.known_drones_age[int(other_drone)] = drone_message['known_drones_age'][other_drone]
-                    self.known_drones[int(other_drone)] = drone_message['known_drones'][other_drone]
-
-            for other_sensor in drone_message['known_sensors_age'].keys():
-                if drone_message['known_sensors_age'][other_sensor] > self.known_sensors_age.get(int(other_sensor), -1):
-                    self.known_sensors_age[int(other_sensor)] = drone_message['known_sensors_age'][other_sensor]
-                    if other_sensor not in drone_message['known_sensors'] and other_sensor in self.known_sensors:
-                        del self.known_sensors[int(other_sensor)]
-
-    def handle_telemetry(self, telemetry: Telemetry) -> None:
-        if self.current_position is None:
-            self.current_position = telemetry.current_position
-        else:
-            self.current_position = telemetry.current_position
-
-    def _collect_packets(self) -> None:
-        if self.current_position is not None:
-            message_content: DroneBroadcast = {
+        def send_heartbeat(self) -> None:
+            message_content: SensorBroadcast = {
                 "id": self.provider.get_id(),
-                "position": self.current_position,
-                "known_drones": self.known_drones,
-                "known_drones_age": self.known_drones_age,
-                "known_sensors": self.known_sensors,
-                "known_sensors_age": self.known_sensors_age,
-                "type": "D"
+                "position": cast(tuple[float, float, float], self.position),
+                "collected": self.has_collected,
+                "type": "S"
             }
 
-            command = BroadcastMessageCommand(message_content)
-            self.provider.send_communication_command(command)
-        self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval)
+            for drone in self.drone_ids:
+                command = SendMessageCommand(message_content, drone)
+                self.provider.send_communication_command(command)
 
-    def finish(self) -> None:
-        pass
+            self.provider.schedule_timer("", self.provider.current_time() + 1)
+
+        def handle_timer(self, timer: str) -> None:
+            self.send_heartbeat()
+
+        def handle_telemetry(self, telemetry: Telemetry) -> None:
+            if self.position is None:
+                self.position = telemetry.current_position
+                self.send_heartbeat()
+                self.initialized = True
+
+        def finish(self) -> None:
+            pass
+    return SensorProtocol
+
+def create_drone_protocol(
+        speed_action: bool,
+        algorithm_interval: float,
+        num_closest_drones: int,
+        num_closest_sensors: int,
+        sensor_positions: dict[int, tuple[float, float, float]],
+        scenario_size: float):
+    class DroneProtocol(IProtocol):
+        current_position: tuple[float, float, float] | None
+        initialized: bool
+
+        known_sensors: dict[int, tuple[float, float, float]]
+        known_sensors_age: dict[int, float]
+        known_drones: dict[int, tuple[float, float, float]]
+        known_drones_age: dict[int, float]
+
+        def __init__(self):
+            super().__init__()
+            self.speed_action = speed_action
+            self.algorithm_interval = algorithm_interval
+            self.num_closest_drones = num_closest_drones
+            self.num_closest_sensors = num_closest_sensors
+            self.sensor_positions = sensor_positions
+            self.scenario_size = scenario_size
+
+        def act(self, action: List[float], coordinate_limit: float) -> None:
+            if isinstance(action, np.ndarray):
+                action = action.tolist()
+            self.provider.tracked_variables['current_action'] = action
+
+            direction: float = action[0] * 2 * math.pi
+
+            if self.speed_action:
+                speed: float = action[1] * 15
+                command = SetSpeedMobilityCommand(speed)
+                self.provider.send_mobility_command(command)
+
+            unit_vector = [math.cos(direction), math.sin(direction)]
+
+            distance_to_x_edge = coordinate_limit - abs(self.current_position[0])
+            distance_to_y_edge = coordinate_limit - abs(self.current_position[1])
+
+            # Maintain direction but bound destination within scenario
+            if distance_to_x_edge > 0 and distance_to_y_edge > 0:
+                scale_x = distance_to_x_edge / (abs(unit_vector[0]) + 1e-10)
+                scale_y = distance_to_y_edge / (abs(unit_vector[1]) + 1e-10)
+                scale = min(scale_x, scale_y)
+
+                destination = [
+                    self.current_position[0] + unit_vector[0] * scale,
+                    self.current_position[1] + unit_vector[1] * scale,
+                    0
+                ]
+
+            # If the drone is at the edge of the scenario, prevent it from leaving
+            else:
+                destination = [
+                    self.current_position[0] + unit_vector[0] * 1e5,
+                    self.current_position[1] + unit_vector[1] * 1e5,
+                    0
+                ]
+                # Bound destination within scenario
+                destination[0] = max(-coordinate_limit, min(coordinate_limit, destination[0]))
+                destination[1] = max(-coordinate_limit, min(coordinate_limit, destination[1]))
+
+            # Start travelling in the direction of travel
+            command = GotoCoordsMobilityCommand(*destination)
+            self.provider.send_mobility_command(command)
+
+        def observe(self):
+            drone_positions = np.array([pos[:2] for pos in self.known_drones.values()]).reshape((-1, 2))
+            sensor_positions = np.array([pos[:2] for pos in self.known_sensors.values()]).reshape((-1, 2))
+            own_position = np.array(self.current_position[:2])
+
+            drone_kdtree = KDTree(drone_positions)
+            sensor_kdtree = KDTree(sensor_positions)
+
+            drone_count = min(self.num_closest_drones, len(drone_positions))
+            sensor_count = min(self.num_closest_sensors, len(sensor_positions))
+
+            drone_observation = np.zeros((self.num_closest_drones, 2))
+            drone_observation.fill(-1)
+            sensor_observation = np.zeros((self.num_closest_sensors, 2))
+            sensor_observation.fill(-1)
+
+            if drone_count > 0:
+                _, closest_drones = drone_kdtree.query(own_position, drone_count)
+                drone_observation[:drone_count] = (
+                        own_position - drone_positions[closest_drones] + self.scenario_size) / (self.scenario_size * 2)
+
+            if sensor_count > 0:
+                _, closest_sensors = sensor_kdtree.query(own_position, sensor_count)
+                sensor_observation[:sensor_count] = (
+                        own_position - sensor_positions[closest_sensors] + self.scenario_size) / (self.scenario_size * 2)
+
+            return drone_observation.flatten(), sensor_observation.flatten()
+
+        def initialize(self) -> None:
+            self.current_position = None
+
+            self.known_sensors = {**self.sensor_positions}
+            self.known_sensors_age = {
+                sensor_id: self.provider.current_time()
+                for sensor_id in self.sensor_positions.keys()
+            }
+            self.known_drones = {}
+            self.known_drones_age = {}
+
+            self.provider.tracked_variables['known_sensors'] = self.known_sensors
+            self.provider.tracked_variables['known_drones'] = self.known_drones
+
+            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
+
+            self.initialized = False
+
+        def handle_timer(self, timer: str) -> None:
+            self.initialized = True
+            self._collect_packets()
+
+        def handle_packet(self, message: str) -> None:
+            message_type = message['type']
+
+            if message_type == 'S':
+                sensor_message: SensorBroadcast = message
+                self.known_sensors_age[sensor_message['id']] = self.provider.current_time()
+
+                if sensor_message['collected'] and sensor_message['id'] in self.known_sensors:
+                    del self.known_sensors[sensor_message['id']]
+            else:
+                drone_message: DroneBroadcast = message
+                self.known_drones_age[drone_message['id']] = self.provider.current_time()
+                self.known_drones[drone_message['id']] = drone_message['position']
+
+                for other_drone in drone_message['known_drones_age'].keys():
+                    if int(other_drone) == self.provider.get_id():
+                        continue
+
+                    if drone_message['known_drones_age'][other_drone] > self.known_drones_age.get(int(other_drone), -1):
+                        self.known_drones_age[int(other_drone)] = drone_message['known_drones_age'][other_drone]
+                        self.known_drones[int(other_drone)] = drone_message['known_drones'][other_drone]
+
+                for other_sensor in drone_message['known_sensors_age'].keys():
+                    if drone_message['known_sensors_age'][other_sensor] > self.known_sensors_age.get(int(other_sensor), -1):
+                        self.known_sensors_age[int(other_sensor)] = drone_message['known_sensors_age'][other_sensor]
+                        if other_sensor not in drone_message['known_sensors'] and other_sensor in self.known_sensors:
+                            del self.known_sensors[int(other_sensor)]
+
+        def handle_telemetry(self, telemetry: Telemetry) -> None:
+            if self.current_position is None:
+                self.current_position = telemetry.current_position
+            else:
+                self.current_position = telemetry.current_position
+
+        def _collect_packets(self) -> None:
+            if self.current_position is not None:
+                message_content: DroneBroadcast = {
+                    "id": self.provider.get_id(),
+                    "position": self.current_position,
+                    "known_drones": self.known_drones,
+                    "known_drones_age": self.known_drones_age,
+                    "known_sensors": self.known_sensors,
+                    "known_sensors_age": self.known_sensors_age,
+                    "type": "D"
+                }
+
+                command = BroadcastMessageCommand(message_content)
+                self.provider.send_communication_command(command)
+            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval)
+
+        def finish(self) -> None:
+            pass
+
+    return DroneProtocol
 
 
 class GrADySEnvironment(ParallelEnv):
@@ -511,39 +524,32 @@ class GrADySEnvironment(ParallelEnv):
         builder.add_handler(GrADySHandler())
 
         self.sensor_node_ids = []
-        SensorProtocol.min_priority = self.min_sensor_priority
-        SensorProtocol.max_priority = self.max_sensor_priority
+        self.agent_node_ids = []
 
         sensor_positions = {}
-        for i in range(self.num_sensors):
+        for _ in range(self.num_sensors):
             x_pos = random.uniform(-self.scenario_size, self.scenario_size)
             y_pos = random.uniform(-self.scenario_size, self.scenario_size)
-            node_id = builder.add_node(SensorProtocol, (x_pos, y_pos, 0))
+            node_id = builder.add_node(create_sensor_protocol(self.min_sensor_priority, self.max_sensor_priority, self.agent_node_ids), 
+                                       (x_pos, y_pos, 0))
             self.sensor_node_ids.append(node_id)
-            sensor_positions[node_id] = (x_pos, y_pos, 0)
-
-        self.agent_node_ids = []
-        DroneProtocol.speed_action = self.speed_action
-        DroneProtocol.algorithm_interval = self.algorithm_iteration_interval
-        DroneProtocol.num_closest_drones = self.state_num_closest_drones
-        DroneProtocol.num_closest_sensors = self.state_num_closest_sensors
-        DroneProtocol.sensor_positions = sensor_positions
-        DroneProtocol.scenario_size = self.scenario_size
-        for i in range(self.num_drones):
+            sensor_positions[node_id] = (x_pos, y_pos, 0)   
+        
+        for _ in range(self.num_drones):
+            protocol = create_drone_protocol(self.speed_action, self.algorithm_iteration_interval, self.state_num_closest_drones, 
+                                             self.state_num_closest_sensors, sensor_positions, self.scenario_size)
             if self.full_random_drone_position:
-                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                self.agent_node_ids.append(builder.add_node(protocol, (
                     random.uniform(-self.scenario_size, self.scenario_size),
                     random.uniform(-self.scenario_size, self.scenario_size),
                     0
                 )))
             else:
-                self.agent_node_ids.append(builder.add_node(DroneProtocol, (
+                self.agent_node_ids.append(builder.add_node(protocol, (
                     random.uniform(-2, 2),
                     random.uniform(-2, 2),
                     0
                 )))
-
-        SensorProtocol.drone_ids = self.agent_node_ids
 
         self.simulator = builder.build()
         if self.render_mode == "visual":
