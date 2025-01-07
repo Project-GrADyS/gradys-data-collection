@@ -32,6 +32,7 @@ class SensorBroadcast(TypedDict):
     collected: bool
     type: Literal["S"]
 
+
 class DroneBroadcast(TypedDict):
     id: int
     position: tuple[float, float, float]
@@ -295,6 +296,7 @@ class GrADySEnvironment(ParallelEnv):
                  algorithm_iteration_interval: float = 0.5,
                  num_drones: int = 1,
                  num_sensors: int = 2,
+                 max_sensor_count: int = 10,
                  scenario_size: float = 100,
                  max_episode_length: float = 500,
                  max_seconds_stalled: int = 30,
@@ -327,6 +329,7 @@ class GrADySEnvironment(ParallelEnv):
 
         self.num_sensors = num_sensors
         self.num_drones = num_drones
+        self.max_sensor_count = max_sensor_count
         self.possible_agents = [f"drone{i}" for i in range(num_drones)]
         self.max_episode_length = max_episode_length
         self.max_seconds_stalled = max_seconds_stalled
@@ -400,6 +403,33 @@ class GrADySEnvironment(ParallelEnv):
         # Closing the simulator
         self.simulator._finalize_simulation()
 
+    def observe_global_state(self):
+        """
+        Global observation of the simulation state containing all unvisited sensor positions and all agent positions
+        """
+        sensor_nodes = np.array([self.simulator.get_node(sensor_id).position[:2] for sensor_id in self.sensor_node_ids])
+        unvisited_sensor_mask = np.array(
+            [not self.simulator.get_node(sensor_id).protocol_encapsulator.protocol.has_collected for sensor_id in
+             self.sensor_node_ids])
+        unvisited_sensor_nodes = sensor_nodes[unvisited_sensor_mask]
+        agent_nodes = np.array([self.simulator.get_node(agent_id).position[:2] for agent_id in self.agent_node_ids])
+
+        # -1 padded position array
+        all_sensor_positions = np.zeros((self.max_sensor_count, 2))
+        all_sensor_positions.fill(-1)
+        all_sensor_positions[:len(unvisited_sensor_nodes)] = unvisited_sensor_nodes
+
+        # Agent array
+        all_agent_positions = agent_nodes.copy()
+
+        # Normalize the positions
+        all_agent_positions = (all_agent_positions + self.scenario_size) / (self.scenario_size * 2)
+        all_sensor_positions = (all_sensor_positions + self.scenario_size) / (self.scenario_size * 2)
+
+        return np.concatenate([all_agent_positions.flatten(), all_sensor_positions.flatten()])
+
+
+
     def observe_simulation_relative_positions(self):
         sensor_nodes = np.array([self.simulator.get_node(sensor_id).position[:2] for sensor_id in self.sensor_node_ids])
         unvisited_sensor_mask = np.array(
@@ -447,8 +477,10 @@ class GrADySEnvironment(ParallelEnv):
                 # Normalize the positions
                 closest_agents[:len(sorted_agent_indices) - 1] = (agent_position - closest_agents[:len(
                     sorted_agent_indices) - 1] + self.scenario_size) / (self.scenario_size * 2)
-                closest_unvisited_sensors[:len(sorted_sensor_indices)] = (agent_position - closest_unvisited_sensors[:len(
-                    sorted_sensor_indices)] + self.scenario_size) / (self.scenario_size * 2)
+                closest_unvisited_sensors[:len(sorted_sensor_indices)] = \
+                        (agent_position
+                         - closest_unvisited_sensors[:len(sorted_sensor_indices)]
+                         + self.scenario_size) / (self.scenario_size * 2)
 
                 state[f"drone{agent_index}"] = np.concatenate([
                     closest_agents.flatten(),
@@ -456,6 +488,7 @@ class GrADySEnvironment(ParallelEnv):
                     np.array([agent_index / self.num_drones]) if self.id_on_state else []
                 ])
 
+        state['global'] = self.observe_global_state()
         return state
 
     def observe_simulation(self):
@@ -560,8 +593,10 @@ class GrADySEnvironment(ParallelEnv):
             if not self.simulator.step_simulation():
                 raise ValueError("Simulation failed to start")
 
-            if all(self.simulator.get_node(sensor).protocol_encapsulator.protocol.initialized for sensor in self.sensor_node_ids) \
-                    and all(self.simulator.get_node(drone).protocol_encapsulator.protocol.initialized for drone in self.agent_node_ids):
+            if all(self.simulator.get_node(sensor).protocol_encapsulator.protocol.initialized for sensor in
+                   self.sensor_node_ids) \
+                    and all(self.simulator.get_node(drone).protocol_encapsulator.protocol.initialized for drone in
+                            self.agent_node_ids):
                 break
 
         self.episode_duration = 0
