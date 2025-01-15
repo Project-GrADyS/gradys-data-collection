@@ -23,13 +23,18 @@ experiments = [
 
 for agents in [8]:
     for sensors in [(12, 36)]:
-        experiments.append(["python", "main.py", f"--num-drones={agents}", f"--min-num-sensors={sensors[0]}",
-            "--run-name=results varying sensors", f"--max-num-sensors={sensors[1]}",
-            f"--exp-name=a_{agents}-s_{sensors}", "--min-sensor-priority=1", "--total-timesteps=50000000", 
-            "--checkpoint-freq=100000", "--algorithm-iteration-interval=0.5",
-            "--actor-learning-rate=0.00001", "--critic-learning-rate=0.00001", 
-            f"--state-num-closest-drones={agents-1}", f"--state-num-closest-sensors=12", 
-            "--reward=punish", "--no-end-when-all-collected", "--local-observation"])
+        for local_observation in [False]:
+            for global_state in [False]:
+                experiments.append(["python", "main.py", f"--num-drones={agents}", f"--min-num-sensors={sensors[0]}",
+                    "--exp-name=varying_sensor_results", f"--max-num-sensors={sensors[1]}",
+                    f"--run-name=a_8-s_(12,36)", "--min-sensor-priority=1", "--total-timesteps=50000000", 
+                    "--checkpoint-freq=1000000", "--algorithm-iteration-interval=0.5",
+                    "--actor-learning-rate=0.000001", "--critic-learning-rate=0.000001", 
+                    f"--state-num-closest-drones={agents-1}", f"--state-num-closest-sensors=12", 
+                    "--reward=punish", "--no-end-when-all-collected", 
+                    "--local-observation" if local_observation else "--no-local-observation",
+                    "--critic-global-state" if global_state else "--no-critic-global-state"
+                    ])
 
 
 print("Total experiments: ", len(experiments))
