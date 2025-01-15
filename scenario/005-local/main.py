@@ -230,7 +230,8 @@ def main():
     q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.critic_learning_rate)
     actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.actor_learning_rate)
 
-    replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size,
+    training_step_count = args.num_drones if args.train_once_for_each_agent else 1
+    replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size * training_step_count,
                                            storage=LazyTensorStorage(args.buffer_size),
                                            prefetch=10)
 
@@ -431,8 +432,7 @@ def main():
             if global_step <= args.learning_starts:
                 continue
 
-            training_step_count = args.num_drones if args.train_once_for_each_agent else 1
-            data = replay_buffer.sample(args.batch_size * training_step_count).to(device)
+            data = replay_buffer.sample().to(device)
 
             with torch.no_grad():
                 next_actions = target_actor(data["next_observations"]).view(data["next_observations"].shape[0], -1)
@@ -522,7 +522,7 @@ def main():
                     global_step,
                 )
 
-            print(f"{args.exp_name} - SPS:", global_step / (time.time() - start_time))
+            print(f"{args.exp_name}|{args.run_name} - SPS:", global_step / (time.time() - start_time))
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
             evaluate_checkpoint()
