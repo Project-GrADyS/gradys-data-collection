@@ -13,14 +13,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tyro
-from stable_baselines3.common.buffers import ReplayBuffer
-from tensordict import TensorDict
 from torch.utils.tensorboard import SummaryWriter
-from torchrl.data import TensorDictReplayBuffer, LazyTensorStorage
 
 from environment import GrADySEnvironment, StateMode
 from heuristics import create_greedy_heuristics, create_random_heuristics
+from fast_replay import FastReplayBuffer
 
+torch.set_float32_matmul_precision('high')
 
 @dataclass
 class Args:
@@ -68,8 +67,6 @@ class Args:
     """noise clip parameter of the Target Policy Smoothing Regularization"""
 
     # Legacy options
-    train_once_for_each_agent: bool = True
-    """if toggled, a training iteration will be done for each agent at each timestep"""
     max_episode_length: float = 500
     """the maximum length of the episode"""
 
@@ -134,28 +131,39 @@ def make_env(evaluation=False):
 
 
 # ALGO LOGIC: initialize agent here:
-class Critic(nn.Module):
-    def __init__(self, action_space, observation_space):
-        super().__init__()
-        if args.critic_global_state:
+if args.critic_global_state:
+    class Critic(nn.Module):
+        def __init__(self, action_space, observation_space):
+            super().__init__()
             self.fc1 = nn.Linear(
                 2 * args.num_drones + 2 * args.max_num_sensors + np.prod(action_space.shape) * args.num_drones,
                 args.critic_model_size)
-        else:
+            self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
+            self.fc3 = nn.Linear(args.critic_model_size, 1)
+
+        def forward(self, x, a):
+            x = torch.cat([x, a], 1)
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
+            return x
+else:
+    class Critic(nn.Module):
+        def __init__(self, action_space, observation_space):
+            super().__init__()
             self.fc1 = nn.Linear(
                 np.array(observation_space.shape).prod() * args.num_drones + np.prod(
                     action_space.shape) * args.num_drones,
                 args.critic_model_size)
-        self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
-        self.fc3 = nn.Linear(args.critic_model_size, 1)
+            self.fc2 = nn.Linear(args.critic_model_size, args.critic_model_size)
+            self.fc3 = nn.Linear(args.critic_model_size, 1)
 
-    def forward(self, x, a):
-        x = torch.cat([x, a], 1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
-        return x
-
+        def forward(self, x, a):
+            x = torch.cat([x, a], 1)
+            x = F.relu(self.fc1(x))
+            x = F.relu(self.fc2(x))
+            x = self.fc3(x)
+            return x
 
 class Actor(nn.Module):
     def __init__(self, action_space, observation_space):
@@ -185,7 +193,6 @@ if args.use_heuristics == 'random':
 
 run_name = f"{args.run_name}__{args.exp_name}__{args.seed}__{int(time.time())}"
 writer = SummaryWriter(f"runs/{args.exp_name}/{run_name}")
-
 
 def main():
     writer.add_text(
@@ -219,6 +226,14 @@ def main():
     observation_space = env.observation_space(0)
     action_space = env.action_space(0)
 
+    # Creating tensor for optimization reasons, they are used to clip
+    # clip and normalize actions
+    zeros_like_all_actions = torch.zeros((args.num_drones, *action_space.shape), device=device)
+    noise_buffer = torch.zeros_like(zeros_like_all_actions)
+    low_action_space_tensor = torch.tensor(action_space.low, device=device)
+    high_action_space_tensor = torch.tensor(action_space.high, device=device)
+    gamma_tensor = torch.tensor(args.gamma, device=device)
+
     assert isinstance(action_space, gym.spaces.Box), "only continuous action space is supported"
 
     actor = Actor(action_space, observation_space).to(device)
@@ -227,13 +242,18 @@ def main():
     target_actor = Actor(action_space, observation_space).to(device)
     target_actor.load_state_dict(actor.state_dict())
     qf1_target.load_state_dict(qf1.state_dict())
-    q_optimizer = optim.Adam(list(qf1.parameters()), lr=args.critic_learning_rate)
-    actor_optimizer = optim.Adam(list(actor.parameters()), lr=args.actor_learning_rate)
+    q_optimizer = optim.AdamW(list(qf1.parameters()), lr=args.critic_learning_rate, fused=True)
+    actor_optimizer = optim.AdamW(list(actor.parameters()), lr=args.actor_learning_rate, fused=True)
 
-    training_step_count = args.num_drones if args.train_once_for_each_agent else 1
-    replay_buffer = TensorDictReplayBuffer(batch_size=args.batch_size * training_step_count,
-                                           storage=LazyTensorStorage(args.buffer_size),
-                                           prefetch=10)
+    replay_buffer = FastReplayBuffer(
+        buffer_size=args.buffer_size,
+        batch_size=args.batch_size,
+        num_agents=args.num_drones,
+        max_num_sensors=args.max_num_sensors,
+        obs_shape=observation_space.shape,
+        action_shape=action_space.shape,
+        device=device
+    )
 
     start_time = time.time()
 
@@ -347,7 +367,8 @@ def main():
 
     # TRY NOT TO MODIFY: start the game
     obs, _ = env.reset(seed=args.seed)
-    all_agent_obs = np.stack([obs[agent] for agent in env.agents])
+    all_agent_obs = (torch.from_numpy(np.stack([obs[agent] for agent in env.agents]))
+                     .to(device, dtype=torch.float32, non_blocking=True))
     terminated = False
     for global_step in range(args.total_timesteps):
         step_start = time.time()
@@ -358,34 +379,33 @@ def main():
             terminated = False
 
         if args.use_heuristics:
-            actions = {
+            actions_dict = {
                 agent: heuristics(obs[agent]) for agent in env.agents
             }
-            all_agent_actions = np.stack([actions[agent] for agent in env.agents])
+            all_agent_numpy_actions = np.stack([actions_dict[agent] for agent in env.agents], dtype=np.float32)
+            all_agent_torch_actions = torch.from_numpy(all_agent_numpy_actions).to(device, dtype=torch.float32, non_blocking=True)
         else:
             # ALGO LOGIC: put action logic here
             if global_step < args.learning_starts:
-                actions = {
+                actions_dict = {
                     agent: action_space.sample() for agent in env.agents
                 }
-                all_agent_actions = np.stack([actions[agent] for agent in env.agents])
+                all_agent_numpy_actions = np.stack([actions_dict[agent] for agent in env.agents], dtype=np.float32)
+                all_agent_torch_actions = torch.from_numpy(all_agent_numpy_actions).to(device, dtype=torch.float32, non_blocking=True)
             else:
                 with torch.no_grad():
-                    actions = {}
-                    all_obs = torch.tensor(all_agent_obs,
-                                           device=device,
-                                           dtype=torch.float32)
-                    all_actions: torch.Tensor = actor(all_obs)
-                    all_actions.add_(torch.normal(torch.zeros_like(all_actions, device=device),
-                                                  actor.action_scale * args.exploration_noise))
-                    all_actions.clip_(torch.tensor(action_space.low, device=device),
-                                      torch.tensor(action_space.high, device=device))
-                    all_agent_actions = all_actions.cpu().numpy()
+                    actions_dict = {}
+                    all_actions: torch.Tensor = actor(all_agent_obs)
+                    torch.normal(zeros_like_all_actions, actor.action_scale * args.exploration_noise, out=noise_buffer)
+                    all_actions.add_(noise_buffer)
+                    all_actions.clip_(low_action_space_tensor, high_action_space_tensor)
+                    all_agent_numpy_actions = all_actions.cpu().numpy()
+                    all_agent_torch_actions = all_actions
                     for index, agent in enumerate(env.agents):
-                        actions[agent] = all_actions[index].cpu().numpy()
+                        actions_dict[agent] = all_agent_numpy_actions[index]
 
         # TRY NOT TO MODIFY: execute the game and log data.
-        next_obs, rewards, terminations, truncations, infos = env.step(actions)
+        next_obs, rewards, terminations, truncations, infos = env.step(actions_dict)
 
         # TRY NOT TO MODIFY: record rewards for plotting purposes
         if len(infos) > 0 and "avg_reward" in infos[env.agents[0]]:
@@ -407,22 +427,27 @@ def main():
 
         if args.use_heuristics:
             obs = next_obs
-            all_agent_obs = np.stack([obs[agent] for agent in env.agents])
+            all_agent_obs = torch.from_numpy(np.stack([obs[agent] for agent in env.agents])) \
+                .to(device, dtype=np.float32, non_blocking=True)
         else:
             # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
-            all_agent_next_obs = np.stack([next_obs[agent] for agent in env.agents])
+            all_agent_next_obs = torch.from_numpy(np.stack([next_obs[agent] for agent in env.agents])) \
+                .to(device, dtype=torch.float32, non_blocking=True)
 
-            experience = TensorDict({
-                "observations": all_agent_obs,
-                "actions": all_agent_actions,
-                "reward": rewards[env.agents[0]],
-                "next_observations": all_agent_next_obs,
-                "done": int(terminations[env.agents[0]]),
-                "global_state": obs['global'],
-                "next_global_state": next_obs['global'],
-                "episode": episode_count,
-            }).to(torch.float32)
-            replay_buffer.add(experience)
+            reward_tensor = torch.tensor([rewards[env.agents[0]]], dtype=torch.float32)
+            done_tensor = torch.tensor([int(terminations[env.agents[0]])], dtype=torch.float32)
+            global_state_tensor = torch.tensor(obs['global'], dtype=torch.float32)
+            next_global_state_tensor = torch.tensor(next_obs['global'], dtype=torch.float32)
+
+            replay_buffer.add(
+                obs=all_agent_obs,
+                next_obs=all_agent_next_obs,
+                action=all_agent_torch_actions,
+                reward=reward_tensor.to(device, non_blocking=True),
+                done=done_tensor.to(device, non_blocking=True),
+                global_states=global_state_tensor.to(device, non_blocking=True),
+                next_global_states=next_global_state_tensor.to(device, non_blocking=True)
+            )
 
             # TRY NOT TO MODIFY: CRUCIAL step easy to overlook
             obs = next_obs
@@ -432,23 +457,25 @@ def main():
             if global_step <= args.learning_starts:
                 continue
 
-            data = replay_buffer.sample().to(device)
+            data = replay_buffer.sample()
 
             with torch.no_grad():
                 next_actions = target_actor(data["next_observations"]).view(data["next_observations"].shape[0], -1)
                 if args.critic_global_state:
-                    next_state = data["next_global_state"].reshape(data["next_global_state"].shape[0], -1)
+                    next_state = data["next_global_state"].view(data["next_global_state"].shape[0], -1)
                 else:
-                    next_state = data["next_observations"].reshape(data["next_observations"].shape[0], -1)
+                    next_state = data["next_observations"].view(data["next_observations"].shape[0], -1)
                 qf1_next_target = qf1_target(next_state, next_actions)
-                next_q_value = data["reward"] + (1 - data["done"]) * args.gamma * (
-                    qf1_next_target).view(-1)
+                next_q_value = data["reward"].view((data["reward"].shape[0],)) \
+                               + (1 - data["done"].view((data["done"].shape[0],))) \
+                               * gamma_tensor \
+                               * qf1_next_target.view(-1)
 
             if args.critic_global_state:
-                current_state = data["global_state"].reshape(data["global_state"].shape[0], -1)
+                current_state = data["global_state"].view(data["global_state"].shape[0], -1)
             else:
-                current_state = data["observations"].reshape(data["observations"].shape[0], -1)
-            all_actions = data["actions"].reshape(data["actions"].shape[0], -1)
+                current_state = data["observations"].view(data["observations"].shape[0], -1)
+            all_actions = data["actions"].view(data["actions"].shape[0], -1)
             qf1_a_values = qf1(current_state, all_actions).view(-1)
             qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
 
@@ -461,22 +488,28 @@ def main():
                 actor_actions = actor(data["observations"]).view(data["observations"].shape[0], -1)
 
                 actor_loss = -qf1(current_state, actor_actions).mean()
+
                 actor_optimizer.zero_grad()
                 actor_loss.backward()
                 actor_optimizer.step()
 
                 # update the target network
-                for param, target_param in zip(actor.parameters(), target_actor.parameters()):
-                    target_param.data.lerp_(param.data, args.tau)
-                for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                    target_param.data.lerp_(param.data, args.tau)
+                with torch.no_grad():
+                    for param, target_param in zip(actor.parameters(), target_actor.parameters()):
+                        target_param.data.lerp_(param.data, args.tau)
+                    for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
+                        target_param.data.lerp_(param.data, args.tau)
 
         if global_step > 0 and global_step % args.statistics_frequency == 0:
             if not args.use_heuristics:
                 writer.add_scalar("losses/qf1_values", qf1_a_values.mean().item(), global_step)
                 writer.add_scalar("losses/qf1_loss", qf1_loss.item(), global_step)
                 writer.add_scalar("losses/actor_loss", actor_loss.item(), global_step)
-            writer.add_scalar("charts/SPS", global_step / (time.time() - start_time), global_step)
+
+            sps = args.statistics_frequency / (time.time() - start_time)
+            start_time = time.time()
+
+            writer.add_scalar("charts/SPS", sps, global_step)
             writer.add_scalar("charts/step_duration", time.time() - step_start, global_step)
 
             writer.add_scalar(
@@ -522,7 +555,7 @@ def main():
                     global_step,
                 )
 
-            print(f"{args.exp_name}|{args.run_name} - SPS:", global_step / (time.time() - start_time))
+            print(f"{args.exp_name}|{args.run_name} - SPS:", sps)
 
         if args.checkpoints and global_step % args.checkpoint_freq == 0 and global_step > 0:
             evaluate_checkpoint()
