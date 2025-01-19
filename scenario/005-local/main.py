@@ -370,6 +370,60 @@ def main():
     all_agent_obs = (torch.from_numpy(np.stack([obs[agent] for agent in env.agents]))
                      .to(device, dtype=torch.float32, non_blocking=True))
     terminated = False
+
+    # Forward declaration for statistics
+    qf1_a_values =  None
+    qf1_loss = None
+    actor_loss = None
+
+    def train():
+        nonlocal qf1_a_values, qf1_loss, actor_loss
+
+        data = replay_buffer.sample()
+
+        with torch.no_grad():
+            next_actions = target_actor(data["next_observations"]).view(data["next_observations"].shape[0], -1)
+            if args.critic_global_state:
+                next_state = data["next_global_state"].view(data["next_global_state"].shape[0], -1)
+            else:
+                next_state = data["next_observations"].view(data["next_observations"].shape[0], -1)
+            qf1_next_target = qf1_target(next_state, next_actions)
+            next_q_value = data["reward"].view((data["reward"].shape[0],)) \
+                           + (1 - data["done"].view((data["done"].shape[0],))) \
+                           * gamma_tensor \
+                           * qf1_next_target.view(-1)
+
+        if args.critic_global_state:
+            current_state = data["global_state"].view(data["global_state"].shape[0], -1)
+        else:
+            current_state = data["observations"].view(data["observations"].shape[0], -1)
+        all_actions = data["actions"].view(data["actions"].shape[0], -1)
+        qf1_a_values = qf1(current_state, all_actions).view(-1)
+        qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+
+        # optimize the model
+        q_optimizer.zero_grad()
+        qf1_loss.backward()
+        q_optimizer.step()
+
+        if global_step % args.policy_frequency == 0:
+            actor_actions = actor(data["observations"]).view(data["observations"].shape[0], -1)
+
+            actor_loss = -qf1(current_state, actor_actions).mean()
+
+            actor_optimizer.zero_grad()
+            actor_loss.backward()
+            actor_optimizer.step()
+
+            # update the target network
+            with torch.no_grad():
+                for param, target_param in zip(actor.parameters(), target_actor.parameters()):
+                    target_param.data.lerp_(param.data, args.tau)
+                for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
+                    target_param.data.lerp_(param.data, args.tau)
+
+    train = torch.compile(train)
+
     for global_step in range(args.total_timesteps):
         step_start = time.time()
 
@@ -457,48 +511,7 @@ def main():
             if global_step <= args.learning_starts:
                 continue
 
-            data = replay_buffer.sample()
-
-            with torch.no_grad():
-                next_actions = target_actor(data["next_observations"]).view(data["next_observations"].shape[0], -1)
-                if args.critic_global_state:
-                    next_state = data["next_global_state"].view(data["next_global_state"].shape[0], -1)
-                else:
-                    next_state = data["next_observations"].view(data["next_observations"].shape[0], -1)
-                qf1_next_target = qf1_target(next_state, next_actions)
-                next_q_value = data["reward"].view((data["reward"].shape[0],)) \
-                               + (1 - data["done"].view((data["done"].shape[0],))) \
-                               * gamma_tensor \
-                               * qf1_next_target.view(-1)
-
-            if args.critic_global_state:
-                current_state = data["global_state"].view(data["global_state"].shape[0], -1)
-            else:
-                current_state = data["observations"].view(data["observations"].shape[0], -1)
-            all_actions = data["actions"].view(data["actions"].shape[0], -1)
-            qf1_a_values = qf1(current_state, all_actions).view(-1)
-            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
-
-            # optimize the model
-            q_optimizer.zero_grad()
-            qf1_loss.backward()
-            q_optimizer.step()
-
-            if global_step % args.policy_frequency == 0:
-                actor_actions = actor(data["observations"]).view(data["observations"].shape[0], -1)
-
-                actor_loss = -qf1(current_state, actor_actions).mean()
-
-                actor_optimizer.zero_grad()
-                actor_loss.backward()
-                actor_optimizer.step()
-
-                # update the target network
-                with torch.no_grad():
-                    for param, target_param in zip(actor.parameters(), target_actor.parameters()):
-                        target_param.data.lerp_(param.data, args.tau)
-                    for param, target_param in zip(qf1.parameters(), qf1_target.parameters()):
-                        target_param.data.lerp_(param.data, args.tau)
+            train()
 
         if global_step > 0 and global_step % args.statistics_frequency == 0:
             if not args.use_heuristics:
