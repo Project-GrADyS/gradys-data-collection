@@ -10,5 +10,5 @@ In the `runs` folder you can see the saved most relevant results obtained in thi
 The training curves and saved models from the varying sensor
 results trials are available in the `runs/varying_sensor_results`
 folder. The results were then processed by the `test_varying_sensor_results.py`
-script, which generates the `visuzalization/varying_sensor_completion_times.png`
+script, which generates the graphs in `visuzalization/varying_sensor`
 graph.
