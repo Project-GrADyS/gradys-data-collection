@@ -12,3 +12,12 @@ results trials are available in the `runs/varying_sensor_results`
 folder. The results were then processed by the `test_varying_sensor_results.py`
 script, which generates the graphs in `visuzalization/varying_sensor`
 graph.
+
+## Mismatched agent numbers
+
+An experiment evaluating the strategy of applying models
+to scenarios where the number of agents differ from training.
+Script `test_mismatch.py` was used to generate the results.
+It generated a spreadsheet on `visualization/mismatched_completion_times.xlsx`,
+which was modified using Excel to generate two pivot tables,
+providing the data used on the paper.
