@@ -120,6 +120,6 @@ for num_agents in [2, 4, 8]:
     plt.savefig(f"visualization/varying_sensor/varying_sensor_completion_times_{num_agents}_agents.png")
     plt.clf()
 
-sns.barplot(ct_df, x='Sensor Count', y='Completion Time (s)', hue='Agent Count', palette='tab10', errorbar=None)
+sns.barplot(ct_df[ct_df['Model'] == "Varying Sensors"], x='Sensor Count', y='Completion Time (s)', hue='Agent Count', palette='tab10', errorbar=None)
 plt.savefig("visualization/varying_sensor/varying_sensor_completion_times.png")
 plt.clf()
