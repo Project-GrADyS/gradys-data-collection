@@ -567,6 +567,17 @@ def main():
                     sensor_completion_time[num_sensors] / count,
                     global_step,
                 )
+            
+            episode_count = 0
+            all_collected_count = 0
+            all_avg_collection_times = 0
+            all_avg_reward = 0
+            all_max_reward = 0
+            all_sum_reward = 0
+            all_episode_duration = 0
+            all_completion_time = 0
+            sensor_completion_time = defaultdict(int)
+            sensor_episode_counts = defaultdict(int)
 
             print(f"{args.exp_name}|{args.run_name} - SPS:", sps)
 
