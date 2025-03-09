@@ -166,8 +166,12 @@ def create_drone_protocol(
             self.provider.send_mobility_command(command)
 
         def observe(self):
+            drone_keys = list(self.known_drones.keys())
             drone_positions = np.array([pos[:2] for pos in self.known_drones.values()]).reshape((-1, 2))
+
+            sensor_keys = list(self.known_sensors.keys())
             sensor_positions = np.array([pos[:2] for pos in self.known_sensors.values()]).reshape((-1, 2))
+
             own_position = np.array(self.current_position[:2])
 
             drone_kdtree = KDTree(drone_positions)
@@ -178,20 +182,30 @@ def create_drone_protocol(
 
             drone_observation = np.zeros((self.num_closest_drones, 2))
             drone_observation.fill(-1)
+            drone_age_observation = np.zeros(self.num_closest_drones)
+            drone_age_observation.fill(-1)
             sensor_observation = np.zeros((self.num_closest_sensors, 2))
             sensor_observation.fill(-1)
+            sensor_age_observation = np.zeros(self.num_closest_sensors)
 
             if drone_count > 0:
-                _, closest_drones = drone_kdtree.query(own_position, drone_count)
+                _, closest_drones = drone_kdtree.query(own_position, range(1, drone_count + 1))
                 drone_observation[:drone_count] = (
                         own_position - drone_positions[closest_drones] + self.scenario_size) / (self.scenario_size * 2)
 
+                # If k is one the kdtree does not return an array
+                drone_keys = [drone_keys[closest_drone] for closest_drone in closest_drones]
+                drone_age_observation[:drone_count] = [self.known_drones_age[drone_key] / 500 for drone_key in drone_keys]
+
             if sensor_count > 0:
-                _, closest_sensors = sensor_kdtree.query(own_position, sensor_count)
+                _, closest_sensors = sensor_kdtree.query(own_position, range(1, sensor_count + 1))
                 sensor_observation[:sensor_count] = (
                         own_position - sensor_positions[closest_sensors] + self.scenario_size) / (self.scenario_size * 2)
 
-            return drone_observation.flatten(), sensor_observation.flatten()
+                sensor_keys = [sensor_keys[closest_sensor] for closest_sensor in closest_sensors]
+                sensor_age_observation[:sensor_count] = [self.known_sensors_age[sensor_key] / 500 for sensor_key in sensor_keys]
+
+            return drone_observation.flatten(), sensor_observation.flatten(), drone_age_observation, sensor_age_observation
 
         def initialize(self) -> None:
             self.current_position = None
@@ -349,30 +363,14 @@ class GrADySEnvironment(ParallelEnv):
 
     def observation_space(self, agent):
         agent_id = 1 if self.id_on_state else 0
-        if self.state_mode == "absolute":
-            self_position = 2
-            agent_positions = self.state_num_closest_drones * 2
-            sensor_positions = self.state_num_closest_sensors * 2
 
-            return Box(0, 1, shape=(self_position + agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "distance_angle" or self.state_mode == "relative":
-            agent_positions = self.state_num_closest_drones * 2
-            sensor_positions = self.state_num_closest_sensors * 2
+        agent_positions = self.state_num_closest_drones * 2
+        agent_ages = self.state_num_closest_drones
+        sensor_positions = self.state_num_closest_sensors * 2
+        sensor_ages = self.state_num_closest_sensors
 
-            return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "angle":
-            agent_positions = self.state_num_closest_drones * 1
-            sensor_positions = self.state_num_closest_sensors * 1
+        return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_ages + sensor_ages + agent_id,))
 
-            return Box(0, 1, shape=(agent_positions + sensor_positions + agent_id,))
-        elif self.state_mode == "all_positions":
-            # Observe locations of all agents
-            agent_positions = self.num_drones * 2
-            agent_index = 1
-            sensor_positions = self.num_sensors * 2
-            sensor_visited = self.num_sensors
-
-            return Box(0, 1, shape=(agent_positions + agent_index + sensor_positions + sensor_visited + agent_id,))
 
     def action_space(self, agent):
         # Drone can move in any direction
@@ -445,9 +443,15 @@ class GrADySEnvironment(ParallelEnv):
             )
             state = {
                 f"drone{index}":
-                    np.concatenate(
-                        [drone_observation, sensor_observation, [index / self.num_drones] if self.id_on_state else []])
-                for index, (drone_observation, sensor_observation) in enumerate(node_observations)
+                    np.concatenate([
+                        drone_observation,
+                        sensor_observation,
+                        drone_age_observation,
+                        sensor_age_observation,
+                        [index / self.num_drones] if self.id_on_state else []
+                    ])
+                for index, (drone_observation, sensor_observation, drone_age_observation, sensor_age_observation)
+                in enumerate(node_observations)
             }
         else:
             state = {}
