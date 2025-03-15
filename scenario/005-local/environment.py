@@ -221,12 +221,11 @@ def create_drone_protocol(
             self.provider.tracked_variables['known_sensors'] = self.known_sensors
             self.provider.tracked_variables['known_drones'] = self.known_drones
 
-            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval * 0.9)
+            self.provider.schedule_timer("", self.provider.current_time())
 
             self.initialized = False
 
         def handle_timer(self, timer: str) -> None:
-            self.initialized = True
             self._collect_packets()
 
         def handle_packet(self, message: str) -> None:
@@ -262,6 +261,7 @@ def create_drone_protocol(
                 self.current_position = telemetry.current_position
             else:
                 self.current_position = telemetry.current_position
+            self.initialized = True
 
         def _collect_packets(self) -> None:
             if self.current_position is not None:
@@ -277,7 +277,7 @@ def create_drone_protocol(
 
                 command = BroadcastMessageCommand(message_content)
                 self.provider.send_communication_command(command)
-            self.provider.schedule_timer("", self.provider.current_time() + self.algorithm_interval)
+            self.provider.schedule_timer("", self.provider.current_time() + 0.5)
 
         def finish(self) -> None:
             pass
