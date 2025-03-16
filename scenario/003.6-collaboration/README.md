@@ -10,9 +10,9 @@ models and log files are stored in the `runs/agent_strats/`folder.
 Experiments testing each of them were compiled like such:
 
 1. The average reward was downloaded using tensorboard and stored in the 
-`visualization/variable agent strats/` folder
-2. The `visualization/strats.py` script was used to generate the plot saved as
-`visualization/variable agent strats/rewards.png`
+`statistics/variable agent strats/` folder
+2. The `statistics/strats.py` script was used to generate the plot saved as
+`statistics/variable agent strats/rewards.png`
 
 ## Variable agent results
 
@@ -20,7 +20,7 @@ Results from the best strat are saved in `runs/varying_agents/`, including the
 saved models and log files. The results were analyzed following the steps:
 
 1. The average reward and completion time data was downloaded using tensorboard
-and stored in the `visualization/variable agent results/` folder
-2. The `visualization/results.py` script was used to generate the
-plots saved as `visualization/variable agent results/all_collected_rate.png` and
-`visualization/variable agent results/completion_times.png`
+and stored in the `statistics/variable agent results/` folder
+2. The `statistics/results.py` script was used to generate the
+plots saved as `statistics/variable agent results/all_collected_rate.png` and
+`statistics/variable agent results/completion_times.png`
