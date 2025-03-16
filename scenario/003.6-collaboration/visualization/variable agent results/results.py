@@ -11,7 +11,7 @@ completion_time = pd.read_csv("./completion_time.csv")
 sns.set_theme()
 sns.set_style("whitegrid")
 ax = sns.lineplot(data=all_collected, x='Step', y='Value')
-ax.set(xlabel='Training step', ylabel='Collected rate (0-1)')
+ax.set(xlabel='Training step', ylabel='Success Rate')
 plt.tight_layout()
 
 # Save the plot
