@@ -101,5 +101,5 @@ if __name__ == "__main__":
     ct_df = pd.DataFrame.from_records(completion_times)
     plt.set_loglevel('WARNING')
     sns.lineplot(ct_df, x='Sensor Count', y='Completion Time (s)', hue='Agent Count', palette='tab10', errorbar=None)
-    plt.savefig(f"visualization/varying_sensor/varying_sensor_completion_times_line.png")
+    plt.savefig(f"statistics/varying_sensor/varying_sensor_completion_times_line.png")
     plt.clf()

@@ -161,5 +161,5 @@ if __name__ == "__main__":
             sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
             plt.tight_layout()
 
-            plt.savefig(f"visualization/mismatched_agents/path-model{num_agents_model}-a{num_agents_test}.png")
+            plt.savefig(f"statistics/mismatched_agents/path-model{num_agents_model}-a{num_agents_test}.png")
             plt.close(fig)
