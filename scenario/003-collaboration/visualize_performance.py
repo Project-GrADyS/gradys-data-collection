@@ -1,5 +1,3 @@
-from collections import defaultdict
-
 from main import Actor
 from environment import GrADySEnvironment
 from heuristics import *
@@ -23,7 +21,7 @@ completion_times = []
 for num_agents, num_sensors, model_path in models:
     print(f"Running with {num_agents} agents and {num_sensors} sensors")
     print(f"Loading model from {model_path}")
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cpu")
     actor_model = torch.load(model_path, map_location=device, weights_only=True)[0]
 
     # Running model
@@ -130,16 +128,16 @@ max_completion_time = ct_df['Completion Time (s)'].max()
 for num_agents in [2, 4, 8]:
     ax = sns.barplot(ct_df[ct_df['Agent Count'] == num_agents], x='Sensor Count', y='Completion Time (s)', hue='Method', palette='tab10')
     ax.set_ylim(0, max_completion_time)
-    plt.savefig(f"completion_times-{num_agents}a-greedy.png")
+    plt.savefig(f"statistics/completion_times/completion_times-{num_agents}a-greedy.png")
     plt.close()
 
 for num_sensors in [12, 24, 36]:
     ax = sns.barplot(ct_df[ct_df['Sensor Count'] == num_sensors], x='Agent Count', y='Completion Time (s)', hue='Method', palette='tab10')
     ax.set_ylim(0, max_completion_time)
-    plt.savefig(f"completion_times-{num_sensors}s-greedy.png")
+    plt.savefig(f"statistics/completion_times/completion_times-{num_sensors}s-greedy.png")
     plt.close()
 
 # Average completion time over method
 ax = sns.barplot(ct_df, x='Method', y='Completion Time (s)')
 ax.set_ylim(0, max_completion_time)
-plt.savefig("completion_times-average-greedy.png")
+plt.savefig("statistics/completion_times/completion_times-average-greedy.png")

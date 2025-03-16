@@ -155,4 +155,4 @@ for num_agents, num_sensors, model_path in models:
         sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
         plt.tight_layout()
 
-        plt.savefig(f"path-a{num_agents}s{num_sensors}.png")
+        plt.savefig(f"statistics/paths/path-a{num_agents}s{num_sensors}.png")
