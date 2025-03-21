@@ -7,7 +7,9 @@ This repository contains the ongoing research on RL-powered UAV data collection 
 The repository is organized in scenarios. Each scenario presents experiments
 evaluating some hypothesis, each is generally an evolution of the previous. Not
 all scenarios generated results of value, only the ones that did will be listed
-in this documentation.
+in this documentation. All experiments use tensorboard for logging. The 
+tensorboard log files contain training curves and hyperparameters used for each
+experiment.
 
 ### 002-scaling
 Explored the applicability of MADDPG to the UAV data collection problem with 
