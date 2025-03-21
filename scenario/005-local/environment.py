@@ -365,9 +365,9 @@ class GrADySEnvironment(ParallelEnv):
         agent_id = 1 if self.id_on_state else 0
 
         agent_positions = self.state_num_closest_drones * 2
-        agent_ages = self.state_num_closest_drones
+        agent_ages = self.state_num_closest_drones if self.local_observation else 0
         sensor_positions = self.state_num_closest_sensors * 2
-        sensor_ages = self.state_num_closest_sensors
+        sensor_ages = self.state_num_closest_sensors if self.local_observation else 0
 
         return Box(-1, 1, shape=(agent_positions + sensor_positions + agent_ages + sensor_ages + agent_id,))
 
@@ -448,6 +448,10 @@ class GrADySEnvironment(ParallelEnv):
                         sensor_observation,
                         drone_age_observation,
                         sensor_age_observation,
+                        [index / self.num_drones] if self.id_on_state else []
+                    ]) if self.local_observation else np.concatenate([
+                        drone_observation,
+                        sensor_observation,
                         [index / self.num_drones] if self.id_on_state else []
                     ])
                 for index, (drone_observation, sensor_observation, drone_age_observation, sensor_age_observation)
