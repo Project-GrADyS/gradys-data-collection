@@ -3,7 +3,7 @@ The `main.py` file contains all code used in the training process for this scena
 
 # Results
 
-## Varying sensor results
+## Flexible Sensor Count
 
 The training curves and saved models from the varying sensor
 results trials are available in the `runs/varying_sensor_results`
@@ -21,8 +21,20 @@ for sensor count between 12 and 36 and generates. It generates the
 `varying_sensor_completion_times_line.png` file on the 
 `statistics/varying_sensor` folder.
 
+### Paths
+Paths for the varying sensor count experiments were generated using the
+`plot_flexible_sensor_paths.py` script, which runs an episode for each
+scenario variation and stores the positions of agents and sensors. 
+That information is used to plot the paths of the agents and sensors in the
+`statistics/paths/flexible_sensor` folder.
 
-## Mismatched agent numbers
+### Failing Path 
+The `plot_failing_ath.py` script runs episodes until a failure is found, then
+plots the path taken by the agents and sensors. That path is saved in
+`statistics/paths/failing/path-a4s24.png`. 
+
+
+## Flexible Agent Count
 An experiment evaluating the strategy of applying models
 to scenarios where the number of agents differ from training.
 ### Performance

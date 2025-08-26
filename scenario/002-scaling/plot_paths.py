@@ -38,7 +38,7 @@ class data_linewidth_plot():
 
 # Loading the model
 models = [
-    (4, 8, f"runs/closest/closest-1-sensor-0-agent/1-sensor-0-agent-checkpoint191.cleanrl_model")
+    (4, 36, f"runs/closest/closest-1-sensor-0-agent/1-sensor-0-agent-checkpoint191.cleanrl_model")
 ]
 
 completion_times = []
@@ -60,8 +60,8 @@ for num_agents, num_sensors, model_path in models:
     if __name__ == "__main__":
         env = GrADySEnvironment(
             algorithm_iteration_interval=0.5,
-            num_drones=4,
-            num_sensors=8,
+            num_drones=num_agents,
+            num_sensors=num_sensors,
             max_seconds_stalled=30,
             scenario_size=100,
             render_mode=None,
@@ -146,4 +146,4 @@ for num_agents, num_sensors, model_path in models:
         sns.move_legend(ax, "upper left", bbox_to_anchor=(1, 1))
         plt.tight_layout()
 
-        plt.savefig(f"path-a{num_agents}s{num_sensors}.png")
+        plt.savefig(f"statistics/paths/exploratory-a{num_agents}s{num_sensors}.png")

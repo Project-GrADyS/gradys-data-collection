@@ -6,4 +6,10 @@ The `main.py` file contains all code used in the training process for this scena
 The results of the training process are saved in the `runs` folder. 
 The `runs/closest/closest-1-sensor-0-agent` training run was used to generate
 a graph of UAV trajectories. The `plot_paths.py` script can be used to generate
-the graph. The graph is saved in `exploratory-a4s8.png`.
+the graph. The graph is saved in `statistics/paths/exploratory-a4s8.png`.
+
+## Failing path
+The `plot_failing_path.py` script runs episodes until a failure is found, then
+plots the path taken by the agents and sensors. 
+The graph is saved in `statistics/paths/failing.png`. Episodes are ran using the
+`runs/closest/closest-1-sensor-0-agent` trained model.
