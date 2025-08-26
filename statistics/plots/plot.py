@@ -1,3 +1,10 @@
+# These statistics were gathered from multiple runs of different algorithms in a robotics simulation environment.
+# Each algorithm variations has a visualize_performance.py script that logs performance metrics.
+# Non-collaborative: 002-scaling/visualize_performance.py
+# Collaborative: 003-collaborative/visualize_performance.py
+# Flexible sensor: 005-performance/visualize_performance_flexible_agents.py
+# Flexible agent: 005-local/visualize_performance_flexible_sensor.py
+
 # Métricas do non-collaborative
 # Total successful runs: 4434
 # Total runs: 4500
@@ -32,7 +39,6 @@
 
 import matplotlib.pyplot as plt
 import seaborn as sns
-import pandas as pd
 
 # Dados extraídos dos comentários
 algorithms = [
@@ -55,8 +61,8 @@ plt.rcParams['figure.dpi'] = 150
 ax1 = sns.barplot(x=algorithms, y=success_rate, palette="crest", )
 for i, container in enumerate(ax1.containers):
     ax1.bar_label(container, labels=[f'{success_rate[i]:.2f}%'], fontsize=16)
-ax1.set_ylabel('Taxa de Sucesso (%)')
-ax1.set_xlabel('Algoritmo')
+ax1.set_ylabel('Success Rate (%)')
+ax1.set_xlabel('Algorithm')
 ax1.set_ylim(95, 100.8)  # Ajuste do limite do eixo y
 plt.tight_layout()
 plt.savefig('./success_rate_barplot.png')
@@ -66,8 +72,8 @@ plt.clf()
 ax2 = sns.barplot(x=algorithms, y=avg_completion_time, palette="crest")
 for i, container in enumerate(ax2.containers):
     ax2.bar_label(container, labels=[f'{avg_completion_time[i]:.2f}s'], fontsize=16)
-ax2.set_ylabel('Tempo Médio de Conclusão (s)')
-ax2.set_xlabel('Algoritmo')
+ax2.set_ylabel('Completion Time (s)')
+ax2.set_xlabel('Algorithm')
 plt.tight_layout()
 plt.savefig('./completion_time_barplot.png')
 plt.clf()
@@ -76,8 +82,8 @@ plt.clf()
 ax3 = sns.barplot(x=algorithms, y=total_training_time, palette="crest")
 for i, container in enumerate(ax3.containers):
     ax3.bar_label(container, labels=[f'{total_training_time[i]:.2f}h'], fontsize=16)
-ax3.set_ylabel('Tempo Total de Treinamento (h)')
-ax3.set_xlabel('Algoritmo')
+ax3.set_ylabel('Training Time (h)')
+ax3.set_xlabel('Algorithm')
 plt.tight_layout()
 plt.savefig('./training_time_barplot.png')
 plt.clf()
